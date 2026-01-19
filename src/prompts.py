@@ -1,7 +1,7 @@
 # Modify these prompts however you want to get the best output possible, 
 # The current prompt works really well with Open AI and Gemini, But still you can modify these prompts however you want. 
 
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 OPENAI_PROMPT = PromptTemplate(
     input_variables=["webpage_content", "query"],

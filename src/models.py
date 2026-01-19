@@ -1,6 +1,6 @@
 from langchain_openai import ChatOpenAI
 from langchain_openai import OpenAI
-from langchain.base_language import BaseLanguageModel
+from langchain_core.language_models.base import BaseLanguageModel
 import google.generativeai as genai
 import os
 from langchain_google_genai import ChatGoogleGenerativeAI
