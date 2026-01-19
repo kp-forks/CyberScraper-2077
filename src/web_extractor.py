@@ -14,8 +14,8 @@ from .scrapers.json_scraper import JSONScraper
 from .utils.proxy_manager import ProxyManager
 from .utils.markdown_formatter import MarkdownFormatter
 from .prompts import get_prompt_for_model
-from langchain.schema.runnable import RunnableSequence
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_core.runnables import RunnableSequence
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 import tiktoken
 import csv
 from bs4 import BeautifulSoup, Comment
