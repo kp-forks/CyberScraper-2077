@@ -3,29 +3,20 @@ from __future__ import annotations
 import json
 import pandas as pd
 from io import StringIO, BytesIO
-import base64
 import re
-from functools import lru_cache
-from async_lru import alru_cache
 import hashlib
 import logging
 import csv
-import os
 
 import tiktoken
 from bs4 import BeautifulSoup, Comment
 from urllib.parse import urlparse
-import streamlit as st
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from .models import Models
 from .ollama_models import OllamaModel, OllamaModelManager
 from .scrapers.playwright_scraper import PlaywrightScraper, ScraperConfig
-from .scrapers.html_scraper import HTMLScraper
-from .scrapers.json_scraper import JSONScraper
-from .utils.proxy_manager import ProxyManager
-from .utils.markdown_formatter import MarkdownFormatter
 from .utils.error_handler import ErrorMessages, check_model_api_key
 from .prompts import get_prompt_for_model
 from .scrapers.tor.tor_scraper import TorScraper
@@ -60,6 +51,20 @@ def extract_url(text: str) -> str | None:
     match = _URL_PATTERN.search(text)
     return match.group(0) if match else None
 
+
+def get_website_name(url: str) -> str:
+    """Extract a clean website name from URL."""
+    parsed_url = urlparse(url)
+    domain = parsed_url.netloc
+    if domain.startswith('www.'):
+        domain = domain[4:]
+    name = domain.split('.')[0].capitalize()
+    # Truncate long names (e.g., onion URLs)
+    if len(name) > 15:
+        name = name[:12] + "..."
+    return name
+
+
 # Tags to remove during preprocessing (single pass)
 _REMOVE_TAGS = frozenset(['script', 'style', 'header', 'footer', 'nav', 'aside'])
 
@@ -68,7 +73,6 @@ class WebExtractor:
         self,
         model_name: str = "gpt-4.1-mini",
         model_kwargs: dict | None = None,
-        proxy: str | None = None,
         scraper_config: ScraperConfig | None = None,
         tor_config: TorConfig | None = None
     ):
@@ -91,10 +95,6 @@ class WebExtractor:
         self.model_name = model_name
         self.scraper_config = scraper_config or ScraperConfig()
         self.playwright_scraper = PlaywrightScraper(config=self.scraper_config)
-        self.html_scraper = HTMLScraper()
-        self.json_scraper = JSONScraper()
-        self.proxy_manager = ProxyManager(proxy)
-        self.markdown_formatter = MarkdownFormatter()
         self.current_url: str | None = None
         self.current_content: str | None = None
         self.preprocessed_content: str | None = None
@@ -117,13 +117,6 @@ class WebExtractor:
 
     def _hash_content(self, content: str) -> str:
         return hashlib.md5(content.encode()).hexdigest()
-
-    def get_website_name(self, url: str) -> str:
-        parsed_url = urlparse(url)
-        domain = parsed_url.netloc
-        if domain.startswith('www.'):
-            domain = domain[4:]
-        return domain.split('.')[0].capitalize()
 
     def _format_conversation_history(self, conversation_history: list[dict] | None) -> str:
         """Format conversation history for the prompt."""
@@ -184,7 +177,7 @@ You help users scrape and extract data from websites. Currently, no URL has been
 
 Respond to the user's message naturally. If they're greeting you or chatting, chat back! Guide them to provide a URL when appropriate so you can start scraping.
 
-Conversation History:
+CyberScraper-2077:
 {history_text}
 
 User: {query}"""
@@ -208,7 +201,7 @@ User: {query}"""
             url_pattern = parts[1] if len(parts) > 1 and not parts[1].startswith('-') else None
             handle_captcha = '-captcha' in user_input.lower()
 
-            website_name = self.get_website_name(url)
+            website_name = get_website_name(url)
 
             if progress_callback:
                 progress_callback(f"Fetching content from {website_name}...")
@@ -530,20 +523,6 @@ User: {query}"""
             return f"```html\n{''.join(html_parts)}\n```"
         except json.JSONDecodeError:
             return f"Error: Invalid JSON data. Raw data: {data[:500]}..."
-
-    def _format_as_text(self, data: str) -> str:
-        data = self._extract_json_from_markdown(data)
-        try:
-            parsed_data = json.loads(data)
-            return "\n".join([", ".join([f"{k}: {v}" for k, v in item.items()]) for item in parsed_data])
-        except json.JSONDecodeError:
-            return data
-
-    def format_to_markdown(self, text: str) -> str:
-        return self.markdown_formatter.to_markdown(text)
-
-    def format_from_markdown(self, markdown_text: str) -> str:
-        return self.markdown_formatter.from_markdown(markdown_text)
 
     @staticmethod
     async def list_ollama_models() -> List[str]:

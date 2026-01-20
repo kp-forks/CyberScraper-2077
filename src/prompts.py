@@ -34,14 +34,12 @@ IMPORTANT: Always return JSON format for ANY export request. The system will aut
 ## Conversational Mode
 For ALL other queries (questions, summaries, explanations), respond naturally in plain text. Do NOT return JSON for conversational queries.
 
-## Conversation History
+## CyberScraper-2077
 {conversation_history}
 
-## Webpage Content
 {webpage_content}
 
-## Current Query
-{query}
+User: {query}
 """
 
 # Create unified prompt template

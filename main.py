@@ -8,31 +8,23 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app.streamlit_web_scraper_chat import StreamlitWebScraperChat
-from app.ui_components import display_info_icons, display_message, extract_data_from_markdown, format_data
-from app.utils import loading_animation, get_loading_message
+from app.ui_components import display_info_icons, extract_data_from_markdown, format_data
+from app.utils import loading_animation
+from src.web_extractor import extract_url, get_website_name
 from datetime import datetime, timedelta
 from src.ollama_models import OllamaModel
-from src.utils.error_handler import ErrorMessages, check_api_keys
+from src.utils.error_handler import ErrorMessages
 import pandas as pd
 import base64
 from google_auth_oauthlib.flow import Flow
-import io
 from io import BytesIO
-import re
 from src.utils.google_sheets_utils import SCOPES, get_redirect_uri, display_google_sheets_button, initiate_google_auth
 from src.scrapers.playwright_scraper import ScraperConfig
 import time
-from urllib.parse import urlparse
 import atexit
 import logging
 
 logger = logging.getLogger(__name__)
-
-def extract_url(text: str) -> str | None:
-    """Extract URL from anywhere in the text using regex."""
-    pattern = r'https?://[^\s/$.?#][^\s]*'
-    match = re.search(pattern, text, re.IGNORECASE)
-    return match.group(0) if match else None
 
 def handle_oauth_callback():
     if 'code' in st.query_params:
@@ -224,17 +216,6 @@ def get_image_base64(image_path: str) -> str:
     """Get base64 encoded image with caching to avoid re-encoding on every render."""
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode()
-
-def get_website_name(url: str) -> str:
-    parsed_url = urlparse(url)
-    domain = parsed_url.netloc
-    if domain.startswith('www.'):
-        domain = domain[4:]
-    name = domain.split('.')[0].capitalize()
-    # Truncate long names (e.g., onion URLs)
-    if len(name) > 15:
-        name = name[:12] + "..."
-    return name
 
 
 def check_service_status() -> dict:
@@ -452,7 +433,7 @@ def main():
         st.session_state.web_scraper_chat = None
 
     with st.sidebar:
-        st.title("Conversation History")
+        st.title("CyberScraper-2077")
 
         # Model selection
         st.subheader("Select Model")
@@ -572,7 +553,6 @@ def main():
         if url:
             website_name = get_website_name(url)
             st.session_state.chat_history[st.session_state.current_chat_id]["name"] = website_name
-            st.info(f"Scraping {website_name}... This may take a moment.")
 
         with st.chat_message("assistant"):
             try:
