@@ -1,12 +1,6 @@
 # 🌐 CyberScraper 2077
 
 <p align="center">
-  <a href="https://www.thordata.com/?ls=VNSCxroa&lk=CyberScraper">
-    <img src="https://i.postimg.cc/dtwTvm5V/728-x-90-2.gif" alt="Collect-web-data-728x90" border="0">
-  </a>
-</p>
-
-<p align="center">
   <img src="https://i.postimg.cc/j5b7QSzg/scraper.png" alt="CyberScraper 2077 Logo">
 </p>
 
@@ -18,7 +12,6 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B)](https://streamlit.io/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
-[![Scrapeless](https://img.shields.io/badge/Scrapeless%20Branch-Available-blue)](https://github.com/itsOwen/CyberScraper-2077/tree/CyberScrapeless-2077)
 
 > Rip data from the net, leaving no trace. Welcome to the future of web scraping.
 
@@ -28,72 +21,25 @@ CyberScraper 2077 is not just another web scraping tool – it's a glimpse into 
 
 Whether you're a corpo data analyst, a street-smart netrunner, or just someone looking to pull information from the digital realm, CyberScraper 2077 has got you covered.
 
-### 🚀 Two Powerful Versions Available
-
-**Main Branch (Current)**: Traditional web scraping with advanced features
-**[Scrapeless Integration Branch](https://github.com/itsOwen/CyberScraper-2077/tree/)**: Enterprise-grade scraping with [Scrapeless SDK](https://www.scrapeless.com?utm_source=owen) integration
-
-<p align="center">
-  <a href="https://www.thordata.com/?ls=VNSCxroa&lk=CyberScraper">
-    <img src="https://i.postimg.cc/dtwTvm5V/728-x-90-2.gif" alt="Collect-web-data-728x90" border="0">
-  </a>
-</p>
-
 <p align="center">
   <img src="https://i.postimg.cc/3NHb15wq/20240821-074556.gif">
 </p>
 
 ## ✨ Features
 
-### 🔧 Main Branch Features
-- 🤖 **AI-Powered Extraction**: Utilizes cutting-edge AI models to understand and parse web content intelligently.
-- 🖥️ **Sleek Streamlit Interface**: User-friendly GUI that even a chrome-armed street samurai could navigate.
-- 🔄 **Multi-Format Support**: Export your data in JSON, CSV, HTML, SQL or Excel – whatever fits your cyberdeck.
-- 🧅 **Tor Network Support**: Safely scrape .onion sites through the Tor network with automatic routing and security features.
-- 🕵️ **Stealth Mode**: Implemented stealth mode parameters that help avoid detection as a bot.
-- 🦙 **Ollama Support**: Use a huge library of open source LLMs.
-- ⚡ **Async Operations**: Lightning-fast scraping that would make a Trauma Team jealous.
-- 🧠 **Smart Parsing**: Structures scraped content as if it was extracted straight from the engram of a master netrunner.
-- 💾 **Caching**: Implemented content-based and query-based caching using LRU cache and a custom dictionary to reduce redundant API calls.
-- 📊 **Upload to Google Sheets**: Now you can easily upload your extracted CSV data to Google Sheets with one click.
-- 🛡️ **Bypass Captcha**: Bypass captcha by using the -captcha at the end of the URL. (Currently only works natively, doesn't work on Docker)
-- 🌐 **Current Browser**: The current browser feature uses your local browser instance which will help you bypass 99% of bot detections. (Only use when necessary)
-- 🧭 **Navigate through the Pages (BETA)**: Navigate through the webpage and scrape data from different pages.
-
-### ⚔️ Scrapeless Integration Branch Features
-> **Want enterprise-grade scraping? Check out our [Scrapeless Integration Branch](https://github.com/itsOwen/CyberScraper-2077/tree/)!**
-
-- 🔐 **Advanced Web Unlocker**: Utilizes Scrapeless's enterprise-grade anti-detection technology to bypass Cloudflare, Akamai, DataDome, and other protection systems.
-- 🤖 **Automatic CAPTCHA Solving**: Seamlessly solves reCAPTCHA v2/v3, and other verification challenges without human intervention.
-- 🌍 **Global Proxy Network**: Access content from specific countries with Scrapeless's extensive proxy network.
-- 🚀 **High-Speed Extraction**: Extract data at unprecedented speed without the overhead of local browser instances.
-- 📈 **95% Success Rate**: Achieve ~95% success rate on even heavily protected sites (compared to ~60-70% with traditional methods).
-- 🔄 **Auto-Updates**: Automatic updates to bypass new protection systems without manual maintenance.
-- ⚡ **Lightweight Operations**: API-based calls instead of heavy browser instances.
-- 🛡️ **Enterprise Security**: Professional-grade anti-bot detection bypassing.
-
-### 📊 Scrapeless vs Traditional Comparison
-
-| Feature | Main Branch | Scrapeless Branch |
-|---------|-------------|-------------------|
-| **Anti-Bot Protection** | Limited custom solutions | Enterprise-grade bypassing |
-| **CAPTCHA Handling** | Manual intervention required | Automatic solving |
-| **Proxy Management** | Basic single proxy | Global proxy network with country selection |
-| **Success Rate** | ~60-70% on protected sites | ~95% on even heavily protected sites |
-| **Resource Usage** | Heavy (browser instances) | Light (API calls only) |
-| **Scalability** | Limited by local resources | Unlimited - cloud-based |
-| **Maintenance** | Constant updates needed | Automatic updates |
-| **Development Time** | Complex custom code | Simple API calls |
-
-## 🎥 Demo
-
-Check out our Redesigned and Improved Version of CyberScraper-2077 with more functionality [YouTube video](https://www.youtube.com/watch?v=TWyensVOIvs) for a full walkthrough of CyberScraper 2077's capabilities.
-
-Check out our first build (Old Video) [YouTube video](https://www.youtube.com/watch?v=iATSd5Ijl4M)
-
-### Scrapeless DEMO
-
-[![Video Demo](https://img.youtube.com/vi/tem8u3mYTMY/maxresdefault.jpg)](https://www.youtube.com/watch?v=tem8u3mYTMY)
+- **AI-Powered Extraction**: Utilizes cutting-edge AI models to understand and parse web content intelligently.
+- **Sleek Streamlit Interface**: User-friendly GUI that even a chrome-armed street samurai could navigate.
+- **Multi-Format Support**: Export your data in JSON, CSV, HTML, SQL or Excel – whatever fits your cyberdeck.
+- **Tor Network Support**: Safely scrape .onion sites through the Tor network with automatic routing and security features.
+- **Stealth Mode**: Implemented stealth mode parameters that help avoid detection as a bot.
+- **Ollama Support**: Use a huge library of open source LLMs.
+- **Async Operations**: Lightning-fast scraping that would make a Trauma Team jealous.
+- **Smart Parsing**: Structures scraped content as if it was extracted straight from the engram of a master netrunner.
+- **Caching**: Implemented content-based and query-based caching using LRU cache and a custom dictionary to reduce redundant API calls.
+- **Upload to Google Sheets**: Now you can easily upload your extracted CSV data to Google Sheets with one click.
+- **Bypass Captcha**: Bypass captcha by using the -captcha at the end of the URL. (Currently only works natively, doesn't work on Docker)
+- **Current Browser**: The current browser feature uses your local browser instance which will help you bypass 99% of bot detections. (Only use when necessary)
+- **Navigate through the Pages (BETA)**: Navigate through the webpage and scrape data from different pages.
 
 ## 🪟 For Windows Users
 
@@ -102,8 +48,6 @@ Please follow the Docker Container Guide given below, as I won't be able to main
 ## 🛠 Installation
 
 **Note: CyberScraper 2077 requires Python 3.10 or higher.**
-
-### Main Branch Installation
 
 1. Clone this repository:
    ```bash
@@ -135,29 +79,7 @@ Please follow the Docker Container Guide given below, as I won't be able to main
    export GOOGLE_API_KEY="your-api-key-here"
    ```
 
-### Scrapeless Integration Branch Installation
-
-For enterprise-grade scraping with automatic CAPTCHA solving and advanced anti-bot bypassing:
-
-1. Clone the Scrapeless integration branch:
-   ```bash
-   git clone -b CyberScrapeless-2077 https://github.com/itsOwen/CyberScraper-2077.git
-   cd CyberScraper-2077
-   ```
-
-2. Install requirements and set API keys:
-   ```bash
-   pip install -r requirements.txt
-   
-   # Set all API keys
-   export OPENAI_API_KEY="your_openai_api_key_here"
-   export GOOGLE_API_KEY="your_google_api_key_here"
-   export SCRAPELESS_API_KEY="your_scrapeless_api_key_here"
-   ```
-
-3. Get your Scrapeless API key from [Scrapeless Dashboard](https://app.scrapeless.com/dashboard/account?tab=apiKey)
-
-### Using Ollama (Both Branches)
+### Using Ollama
 
 Note: I only recommend using OpenAI and Gemini API as these models are really good at following instructions. If you are using open-source LLMs, make sure you have a good system as the speed of the data generation/presentation depends on how well your system can run the LLM. You may also have to fine-tune the prompt and add some additional filters yourself.
 
@@ -171,8 +93,6 @@ Note: I only recommend using OpenAI and Gemini API as these models are really go
 ## 🐳 Docker Installation
 
 If you prefer to use Docker, follow these steps to set up and run CyberScraper 2077:
-
-### Main Branch Docker
 
 1. Ensure you have Docker installed on your system.
 
@@ -191,21 +111,6 @@ If you prefer to use Docker, follow these steps to set up and run CyberScraper 2
    ```bash
    docker run -p 8501:8501 -e OPENAI_API_KEY="your-actual-api-key" -e GOOGLE_API_KEY="your-actual-api-key" cyberscraper-2077
    ```
-
-### Scrapeless Branch Docker
-
-For the Scrapeless integration branch:
-
-```bash
-git clone -b CyberScrapeless-2077 https://github.com/itsOwen/CyberScraper-2077.git
-cd CyberScraper-2077
-docker build -t cyberscrapeless .
-docker run -p 8501:8501 \
-  -e OPENAI_API_KEY="your-actual-api-key" \
-  -e GOOGLE_API_KEY="your-actual-api-key" \
-  -e SCRAPELESS_API_KEY="your-scrapeless-api-key" \
-  cyberscrapeless
-```
 
 ### Using Ollama with Docker
 
@@ -228,7 +133,7 @@ If you want to use Ollama with the Docker setup:
    ```
 
    Now visit the url: http://localhost:8501/
-   
+
    On Linux you might need to use this below:
    ```bash
    docker run -e OLLAMA_BASE_URL=http://<your-host-ip>:11434 -p 8501:8501 cyberscraper-2077
@@ -240,8 +145,6 @@ If you want to use Ollama with the Docker setup:
 Note: Ensure that your firewall allows connections to port 11434 for Ollama.
 
 ## 🚀 Usage
-
-### Main Branch Usage
 
 1. Fire up the Streamlit app:
    ```bash
@@ -256,16 +159,7 @@ Note: Ensure that your firewall allows connections to port 11434 for Ollama.
 
 5. Watch as CyberScraper 2077 tears through the net, extracting your data faster than you can say "flatline"!
 
-### Scrapeless Branch Usage
-
-The Scrapeless integration branch offers the same user interface with enhanced capabilities:
-
-1. **Enterprise Scraping**: Automatically bypasses advanced anti-bot systems like Cloudflare, Akamai, and DataDome
-2. **CAPTCHA-Free**: No manual CAPTCHA solving required - handled automatically
-3. **Global Access**: Choose proxy countries for geo-restricted content
-4. **Higher Success Rate**: Achieve ~95% success rate on protected sites
-
-Example usage with page ranges (both branches):
+Example usage with page ranges:
 ```
 https://example.com/products 1-5
 https://example.com/search?q=cyberpunk&page={page} 1-10
@@ -308,20 +202,11 @@ I suggest you enter the URL structure every time if you want to scrape multiple 
 4. **Automatic Pattern Detection**:
    If you don't specify a pattern, CyberScraper 2077 will attempt to detect the URL pattern automatically. However, for best results, specifying the pattern is recommended.
 
-### Enhanced Multi-Page with Scrapeless
-
-The [Scrapeless integration branch](https://github.com/itsOwen/CyberScraper-2077/tree/CyberScrapeless-2077) provides enhanced multi-page scraping with:
-- **Automatic retry logic** for failed pages
-- **Global proxy rotation** for different pages
-- **CAPTCHA auto-solving** across all pages
-- **Higher success rates** on protected paginated sites
-
 ### Tips for Effective Multi-Page Scraping
 
 - Start with a small range of pages to test before scraping a large number.
 - Be mindful of the website's load and your scraping speed to avoid overloading servers.
 - Use the `simulate_human` option for more natural scraping behavior on sites with anti-bot measures.
-- Consider using the [Scrapeless branch](https://github.com/itsOwen/CyberScraper-2077/tree/CyberScrapeless-2077) for heavily protected sites.
 - Regularly check the website's `robots.txt` file and terms of service to ensure compliance.
 
 ### Example
@@ -344,10 +229,10 @@ CyberScraper 2077 now supports scraping .onion sites through the Tor network, al
    ```bash
    # Ubuntu/Debian
    sudo apt install tor
-   
+
    # macOS (using Homebrew)
    brew install tor
-   
+
    # Start the Tor service
    sudo service tor start  # on Linux
    brew services start tor # on macOS
@@ -408,7 +293,7 @@ docker run -p 8501:8501 \
   <img src="https://i.postimg.cc/3JvhgtMP/cyberscraper-onion.png" alt="CyberScraper 2077 Onion Scrape">
 </p>
 
-## Setup Google Sheets Authentication:
+## 🔐 Setup Google Sheets Authentication
 
 1. Go to the Google Cloud Console (https://console.cloud.google.com/).
 2. Select your project.
@@ -430,24 +315,7 @@ docker run -p 8501:8501 \
 10. Click "Create" to generate the new client ID.
 11. Download the new client configuration JSON file and rename it to `client_secret.json`.
 
-## 🔧 Branch Selection Guide
-
-### Choose Main Branch If:
-- You need Tor network support for .onion sites
-- You prefer local browser control
-- You want to use your current browser session
-- You're doing research or educational projects
-- Budget is a primary concern (free tier friendly)
-
-### Choose [Scrapeless Integration Branch](https://github.com/itsOwen/CyberScraper-2077/tree/CyberScrapeless-2077) If:
-- You're scraping heavily protected sites (Cloudflare, Akamai, DataDome)
-- You need enterprise-grade success rates (~95%)
-- CAPTCHAs are blocking your scraping
-- You want automatic proxy rotation
-- You need reliable, scalable scraping for business use
-- You value time over manual configuration
-
-## Adjusting PlaywrightScraper Settings (optional)
+## ⚙️ Adjusting PlaywrightScraper Settings (optional)
 
 Customize the `PlaywrightScraper` settings to fit your scraping needs. If some websites are giving you issues, you might want to check the behavior of the website:
 
@@ -463,52 +331,11 @@ Adjust these settings based on your target website and environment for optimal r
 
 You can also bypass the captcha using the ```-captcha``` parameter at the end of the URL. The browser window will pop up, complete the captcha, and go back to your terminal window. Press enter and the bot will complete its task.
 
-## 🛠️ Advanced Features
-
-### Scrapeless SDK Integration
-
-For users of the [Scrapeless integration branch](https://github.com/itsOwen/CyberScraper-2077/tree/CyberScrapeless-2077), here are the core capabilities:
-
-#### Web Unlocker API
-```python
-# Automatic anti-bot bypass
-result = scrapeless.unlocker(
-    actor="unlocker.webunlocker",
-    input={
-        "url": "https://protected-website.com",
-        "proxy_country": "US",
-        "js_render": True
-    }
-)
-```
-
-#### CAPTCHA Solver API
-```python
-# Automatic CAPTCHA solving
-result = scrapeless.solver_captcha(
-    actor="captcha.recaptcha",
-    input={
-        "version": "v2",
-        "pageURL": "https://example.com",
-        "siteKey": "your-site-key"
-    }
-)
-```
-
-#### Pre-built Scrapers
-```python
-# E-commerce scrapers
-result = scrapeless.scraper(
-    actor="scraper.shopee",
-    input={"url": "https://shopee.com/product"}
-)
-```
-
 ## 🤝 Contributing
 
-We welcome all cyberpunks, netrunners, and code samurais to contribute to CyberScraper 2077! Whether you're enhancing the main branch, improving the Scrapeless integration, or adding new features, your contributions are valued.
+We welcome all cyberpunks, netrunners, and code samurais to contribute to CyberScraper 2077!
 
-1. Fork the repository (choose your preferred branch)
+1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
 3. Commit your changes (`git commit -m 'Add some amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
@@ -516,33 +343,15 @@ We welcome all cyberpunks, netrunners, and code samurais to contribute to CyberS
 
 ## 🔧 Troubleshooting
 
-### Main Branch Issues
 Ran into a glitch in the matrix? Let me know by adding the issue to this repo so that we can fix it together.
 
-### Scrapeless Integration Issues
-If you encounter issues with the [Scrapeless branch](https://github.com/itsOwen/CyberScraper-2077/tree/CyberScrapeless-2077):
-
-1. **API Key Issues**: Verify your Scrapeless API key is valid
-2. **High Success Rate Expected**: Scrapeless should achieve ~95% success on protected sites
-3. **CAPTCHA Auto-Solve**: Should work automatically without manual intervention
-4. **Proxy Network**: Test with different country codes if content is geo-restricted
-
 ## ❓ FAQ
-
-**Q: Which branch should I use?**
-A: Use the main branch for general scraping and Tor support. Use the [Scrapeless integration branch](https://github.com/itsOwen/CyberScraper-2077/tree/CyberScrapeless-2077) for enterprise-grade scraping with automatic CAPTCHA solving and anti-bot bypassing.
 
 **Q: Is CyberScraper 2077 legal to use?**
 A: CyberScraper 2077 is designed for ethical web scraping. Always ensure you have the right to scrape a website and respect their robots.txt file.
 
 **Q: Can I use this for commercial purposes?**
-A: Yes, under the terms of the MIT License. The Scrapeless integration branch is particularly well-suited for commercial use with its enterprise-grade features.
-
-**Q: What's the success rate difference?**
-A: Main branch: ~60-70% on protected sites. Scrapeless branch: ~95% on even heavily protected sites.
-
-**Q: Do I need to pay for Scrapeless?**
-A: Scrapeless offers various pricing tiers. Check their [pricing page](https://www.scrapeless.com?utm_source=owen) for current rates. The main branch remains free to use.
+A: Yes, under the terms of the MIT License.
 
 ## 📄 License
 
@@ -552,42 +361,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 Got questions? Need support? Want to hire me for a gig?
 
-- 📧 Email: owensingh72@proton.me
-- 🐦 Twitter: [@owensingh_](https://x.com/owensingh_)
-- 💬 Website: [Portfolio](https://www.owensingh.com)
-
-## 🚀 Get Started With Scrapeless
-
-### 🆓 Free Trial
-
-1. **📝 [Sign Up](https://app.scrapeless.com/signup?utm_source=owen)** - No credit card required
-2. **🔑 Get API Key** - Instant access to all features
-3. **📦 Install SDK** - Choose your preferred language
-4. **📖 Follow Quick Start** - Working in 5 minutes
-5. **📈 Scale Up** - Upgrade when ready
-
-### 🏢 Enterprise Contact
-
-- **💰 Custom Pricing** - Volume discounts available
-- **👨‍💼 Dedicated Support** - Named customer success manager
-- **📋 SLA Guarantees** - 99.99% uptime commitment
-- **🏗️ On-premise Options** - Private cloud deployment
-- **📧 Email**: market@scrapeless.com
-
-### 🌐 Connect With Scrapeless Devs
-
-- **🌐 Website**: [scrapeless.com](https://www.scrapeless.com?utm_source=owen)
-- **📚 Documentation**: [docs.scrapeless.com](https://docs.scrapeless.com)
-- **💬 Discord**: [Discord Community](https://discord.com/invite/xBcTfGPjCQ)
-- **💼 LinkedIn**: [Follow Us](https://www.linkedin.com/company/scrapeless/posts/?feedView=all)
-- **🐦 Twitter**: [Follow Us](https://x.com/Scrapelessteam)
-- **📧 Email**: market@scrapeless.com
-
-<p align="center">
-  <a href="https://www.thordata.com/?ls=VNSCxroa&lk=CyberScraper">
-    <img src="https://i.postimg.cc/dtwTvm5V/728-x-90-2.gif" alt="Collect-web-data-728x90" border="0">
-  </a>
-</p>
+- Email: owensingh72@proton.me
+- Website: [owen.sh](https://owen.sh)
 
 ## 🚨 Disclaimer
 
@@ -618,5 +393,5 @@ Remember, samurai: In the dark future of the NET, knowledge is power, but it's a
 </p>
 
 <p align="center">
-  Built with ❤️ and chrome by the streets of Night City | © 2077 Owen Singh
+  Built with love and chrome by the streets of Night City | © 2077 Owen Singh
 </p>

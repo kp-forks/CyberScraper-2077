@@ -26,9 +26,10 @@ IMPORTANT: Always return JSON format for ANY export request. The system will aut
 
 ## Rules for Data Export
 - Return ONLY the JSON array, no explanations or additional text
+- Extract ALL matching items from the entire content (including all pages if multipage)
 - Include all requested fields; use "N/A" if not found
 - Never invent data not present in the content
-- Limit entries if a specific count is requested
+- Only limit entries if a specific count is explicitly requested by the user
 - Use relevant field names based on content and query
 
 ## Conversational Mode
