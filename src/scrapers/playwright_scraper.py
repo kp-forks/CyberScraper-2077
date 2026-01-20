@@ -180,7 +180,7 @@ class PlaywrightScraper(BaseScraper):
         context = None
         try:
             if handle_captcha:
-                # For CAPTCHA mode: create context, handle CAPTCHA, then scrape from same page
+                # For CAPTCHA mode: create context, handle CAPTCHA, then scrape pages
                 context = await self.create_context(browser, proxy)
                 page = await context.new_page()
 
@@ -191,10 +191,27 @@ class PlaywrightScraper(BaseScraper):
                 await self.handle_captcha(page, url)
 
                 # After CAPTCHA is solved, get content from the current page
-                # instead of creating a new context
                 await asyncio.sleep(self.config.delay_after_load)
-                content = await page.content()
-                contents = [content]
+                first_page_content = await page.content()
+
+                # Check if we need to scrape multiple pages
+                if pages:
+                    page_numbers = self.parse_page_numbers(pages)
+                    if not url_pattern:
+                        url_pattern = self.detect_url_pattern(url)
+
+                    contents = [first_page_content]  # First page already scraped
+
+                    # Scrape remaining pages (skip first one since we already have it)
+                    for page_num in page_numbers[1:]:
+                        page_url = self.apply_url_pattern(url, url_pattern, page_num) if url_pattern else url
+                        self.logger.info(f"Scraping page {page_num}: {page_url}")
+                        await page.goto(page_url, wait_until=self.config.wait_for, timeout=self.config.timeout)
+                        await asyncio.sleep(self.config.delay_after_load)
+                        content = await page.content()
+                        contents.append(content)
+                else:
+                    contents = [first_page_content]
             else:
                 # Normal mode: use scrape_multiple_pages
                 contents = await self.scrape_multiple_pages(browser, url, pages, url_pattern, proxy)
