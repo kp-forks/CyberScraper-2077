@@ -1,5 +1,5 @@
-# Use the specified Python image
-FROM python:3.10-slim-bullseye
+# Use Python 3.12 for better performance and compatibility
+FROM python:3.12-slim-bookworm
 
 # Set the working directory in the container
 WORKDIR /app
@@ -37,17 +37,11 @@ RUN git clone https://github.com/itsOwen/CyberScraper-2077.git .
 RUN python -m venv venv
 ENV PATH="/app/venv/bin:$PATH"
 
-# Install Python dependencies
+# Install Python dependencies (includes PySocks for Tor support)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Tor-related Python packages
-RUN pip install --no-cache-dir \
-    PySocks>=1.7.1 \
-    requests[socks]>=2.28.1
-
-# Install patchright (undetected playwright fork) and browser
-RUN pip install patchright requests && \
-    patchright install chromium
+# Install patchright browser (package already in requirements.txt)
+RUN patchright install chromium
 
 # Create run script with proper Tor startup
 RUN echo '#!/bin/bash\n\
