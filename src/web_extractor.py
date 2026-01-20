@@ -49,6 +49,8 @@ def _get_tiktoken_encoding() -> tiktoken.Encoding:
 # Precompiled regex patterns for JSON extraction
 _JSON_BLOCK_PATTERN = re.compile(r'```json\s*([\s\S]*?)\s*```')
 _CODE_BLOCK_PATTERN = re.compile(r'```\s*([\s\S]*?)\s*```')
+# Pattern to find JSON array in text (handles arrays that might have text before/after)
+_JSON_ARRAY_PATTERN = re.compile(r'\[\s*\{[\s\S]*?\}\s*\]')
 # URL extraction pattern
 _URL_PATTERN = re.compile(r'https?://[^\s/$.?#][^\s]*', re.IGNORECASE)
 
@@ -123,12 +125,34 @@ class WebExtractor:
             domain = domain[4:]
         return domain.split('.')[0].capitalize()
 
-    async def _call_model(self, query: str) -> str:
+    def _format_conversation_history(self, conversation_history: list[dict] | None) -> str:
+        """Format conversation history for the prompt."""
+        if not conversation_history:
+            return "No previous conversation."
+
+        history_text = ""
+        # Use last 10 messages for context
+        recent_history = conversation_history[-10:]
+        for msg in recent_history:
+            role = "User" if msg.get("role") == "user" else "Assistant"
+            content = msg.get("content", "")
+            # Truncate very long messages to avoid token overflow
+            if len(content) > 500:
+                content = content[:500] + "..."
+            history_text += f"{role}: {content}\n\n"
+
+        return history_text.strip() if history_text else "No previous conversation."
+
+    async def _call_model(self, query: str, conversation_history: list[dict] | None = None) -> str:
         """Call the model to extract information from preprocessed content."""
         prompt_template = get_prompt_for_model(self.model_name)
 
+        # Format conversation history
+        history_text = self._format_conversation_history(conversation_history)
+
         if isinstance(self.model, OllamaModel):
             full_prompt = prompt_template.format(
+                conversation_history=history_text,
                 webpage_content=self.preprocessed_content,
                 query=query
             )
@@ -136,6 +160,7 @@ class WebExtractor:
         else:
             chain = prompt_template | self.model
             response = await chain.ainvoke({
+                "conversation_history": history_text,
                 "webpage_content": self.preprocessed_content,
                 "query": query
             })
@@ -149,7 +174,28 @@ class WebExtractor:
         # Valid page specs contain only digits, dashes, and commas
         return all(c.isdigit() or c in '-,' for c in value) and any(c.isdigit() for c in value)
 
-    async def process_query(self, user_input: str, progress_callback=None) -> str:
+    async def _chat_without_content(self, query: str, conversation_history: list[dict] | None = None) -> str:
+        """Handle chat when no URL has been scraped yet - let LLM respond naturally."""
+        history_text = self._format_conversation_history(conversation_history)
+
+        prompt = f"""You are a netrunner AI with the personality of Rebecca from Cyberpunk 2077 / Edgerunners. Keep the attitude subtle but present.
+
+You help users scrape and extract data from websites. Currently, no URL has been provided yet.
+
+Respond to the user's message naturally. If they're greeting you or chatting, chat back! Guide them to provide a URL when appropriate so you can start scraping.
+
+Conversation History:
+{history_text}
+
+User: {query}"""
+
+        if isinstance(self.model, OllamaModel):
+            return await self.model.generate(prompt=prompt)
+        else:
+            response = await self.model.ainvoke(prompt)
+            return response.content
+
+    async def process_query(self, user_input: str, conversation_history: list[dict] | None = None, progress_callback=None) -> str:
         url = extract_url(user_input)
         if url:
             # Get text after the URL for parsing parameters
@@ -169,11 +215,14 @@ class WebExtractor:
 
             response = await self._fetch_url(url, pages, url_pattern, handle_captcha, progress_callback)
         elif not self.current_content:
-            response = "Please provide a URL first before asking for information."
+            # No URL yet - let LLM chat naturally
+            if progress_callback:
+                progress_callback("Chatting...")
+            response = await self._chat_without_content(user_input, conversation_history)
         else:
             if progress_callback:
                 progress_callback("Extracting information...")
-            response = await self._extract_info(user_input)
+            response = await self._extract_info(user_input, conversation_history)
 
         self.conversation_history.append(f"Human: {user_input}")
         self.conversation_history.append(f"AI: {response}")
@@ -259,9 +308,9 @@ class WebExtractor:
         chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
         return '\n'.join(chunk for chunk in chunks if chunk)
 
-    async def _extract_info(self, query: str) -> str:
+    async def _extract_info(self, query: str, conversation_history: list[dict] | None = None) -> str:
         if not self.preprocessed_content:
-            return "Please provide a URL first before asking for information."
+            return await self._chat_without_content(query, conversation_history)
 
         content_hash = self._hash_content(self.preprocessed_content)
 
@@ -270,15 +319,21 @@ class WebExtractor:
             self.query_cache.clear()
 
         # Cache key includes model_name to prevent cross-model cache hits
+        # Note: We don't include conversation_history in cache key since conversational
+        # responses should consider the full context each time
         cache_key = (content_hash, query, self.model_name)
 
-        if cache_key in self.query_cache:
+        # Only use cache for explicit data export requests (not conversational queries)
+        export_keywords = ['csv', 'json', 'excel', 'sql', 'html', 'export', 'extract', 'give me the data', 'table']
+        is_export_request = any(keyword in query.lower() for keyword in export_keywords)
+
+        if is_export_request and cache_key in self.query_cache:
             return self.query_cache[cache_key]
 
         content_tokens = self.num_tokens_from_string(self.preprocessed_content)
 
         if content_tokens <= self.max_tokens - 1000:
-            extracted_data = await self._call_model(query)
+            extracted_data = await self._call_model(query, conversation_history)
         else:
             chunks = self.optimized_text_splitter(self.preprocessed_content)
             # Store original content, process chunks, restore
@@ -286,39 +341,77 @@ class WebExtractor:
             all_extracted_data = []
             for chunk in chunks:
                 self.preprocessed_content = chunk
-                chunk_data = await self._call_model(query)
+                chunk_data = await self._call_model(query, conversation_history)
                 all_extracted_data.append(chunk_data)
             self.preprocessed_content = original_content
             extracted_data = self._merge_json_chunks(all_extracted_data)
 
         formatted_result = self._format_result(extracted_data, query)
-        self.query_cache[cache_key] = formatted_result
+
+        # Only cache export requests
+        if is_export_request:
+            self.query_cache[cache_key] = formatted_result
+
         return formatted_result
 
-    def _format_result(self, extracted_data: str, query: str) -> str | tuple[str, pd.DataFrame] | BytesIO:
+    def _extract_json_data(self, extracted_data: str) -> list | dict | None:
+        """Try multiple methods to extract JSON data from the response."""
+        # Method 1: Try direct JSON parse
         try:
-            json_data = json.loads(extracted_data)
-            
-            if 'json' in query.lower():
-                return self._format_as_json(json.dumps(json_data))
-            elif 'csv' in query.lower():
-                csv_string, df = self._format_as_csv(json.dumps(json_data))
-                return f"```csv\n{csv_string}\n```", df
-            elif 'excel' in query.lower():
-                return self._format_as_excel(json.dumps(json_data))
-            elif 'sql' in query.lower():
-                return self._format_as_sql(json.dumps(json_data))
-            elif 'html' in query.lower():
-                return self._format_as_html(json.dumps(json_data))
-            else:
-                if isinstance(json_data, list) and all(isinstance(item, dict) for item in json_data):
+            return json.loads(extracted_data)
+        except json.JSONDecodeError:
+            pass
+
+        # Method 2: Try extracting from markdown code blocks
+        clean_data = self._extract_json_from_markdown(extracted_data)
+        if clean_data != extracted_data:
+            try:
+                return json.loads(clean_data)
+            except json.JSONDecodeError:
+                pass
+
+        # Method 3: Try finding JSON array pattern in text
+        if match := _JSON_ARRAY_PATTERN.search(extracted_data):
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
+
+        return None
+
+    def _format_result(self, extracted_data: str, query: str) -> str | tuple[str, pd.DataFrame] | BytesIO:
+        query_lower = query.lower()
+        export_keywords = ['csv', 'json', 'excel', 'sql', 'html', 'export', 'extract', 'give me the data', 'table', 'download', 'file']
+
+        # Only try to parse as JSON if user explicitly requested data export
+        if any(keyword in query_lower for keyword in export_keywords):
+            json_data = self._extract_json_data(extracted_data)
+
+            if json_data is not None:
+                if 'json' in query_lower:
+                    return self._format_as_json(json.dumps(json_data))
+                elif 'csv' in query_lower or 'file' in query_lower or 'download' in query_lower:
                     csv_string, df = self._format_as_csv(json.dumps(json_data))
                     return f"```csv\n{csv_string}\n```", df
+                elif 'excel' in query_lower:
+                    return self._format_as_excel(json.dumps(json_data))
+                elif 'sql' in query_lower:
+                    return self._format_as_sql(json.dumps(json_data))
+                elif 'html' in query_lower:
+                    return self._format_as_html(json.dumps(json_data))
                 else:
-                    return self._format_as_json(json.dumps(json_data))
-        
-        except json.JSONDecodeError:
-            return self._format_as_text(extracted_data)
+                    # For generic export keywords (export, extract, table, give me the data)
+                    if isinstance(json_data, list) and all(isinstance(item, dict) for item in json_data):
+                        csv_string, df = self._format_as_csv(json.dumps(json_data))
+                        return f"```csv\n{csv_string}\n```", df
+                    else:
+                        return self._format_as_json(json.dumps(json_data))
+
+            # If JSON extraction fails for an export request, return as-is
+            return extracted_data
+
+        # For conversational responses, return as-is (no JSON parsing)
+        return extracted_data
 
     def optimized_text_splitter(self, text: str) -> List[str]:
         return self.text_splitter.split_text(text)

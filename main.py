@@ -77,7 +77,7 @@ def load_chat_history():
     except FileNotFoundError:
         return {}
 
-def safe_process_message(web_scraper_chat, message):
+def safe_process_message(web_scraper_chat, message, conversation_history=None):
     if message is None or message.strip() == "":
         return "I'm sorry, but I didn't receive any input. Could you please try again?"
     try:
@@ -85,7 +85,7 @@ def safe_process_message(web_scraper_chat, message):
         progress_placeholder.text("Initializing scraper...")
 
         start_time = time.time()
-        response = web_scraper_chat.process_message(message)
+        response = web_scraper_chat.process_message(message, conversation_history)
         end_time = time.time()
 
         progress_placeholder.text(f"Scraping completed in {end_time - start_time:.2f} seconds.")
@@ -576,10 +576,13 @@ def main():
 
         with st.chat_message("assistant"):
             try:
+                # Get current chat messages for conversation context
+                chat_messages = st.session_state.chat_history[st.session_state.current_chat_id]["messages"]
                 full_response = loading_animation(
                     safe_process_message,
                     st.session_state.web_scraper_chat,
-                    prompt
+                    prompt,
+                    chat_messages
                 )
                 if isinstance(full_response, str) and not full_response.startswith("Error:"):
                     st.success("Scraping completed successfully!")
