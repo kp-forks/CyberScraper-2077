@@ -23,6 +23,16 @@ import aioconsole
 from ..utils.error_handler import ErrorMessages
 
 
+def _get_browser_channel():
+    """Get browser channel based on platform. Chrome not available on ARM64 Linux."""
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    # Chrome is not available for Linux ARM64 (e.g., Docker on Apple Silicon)
+    if system == "linux" and machine in ("aarch64", "arm64"):
+        return None  # Use default chromium
+    return "chrome"  # Use Chrome for better stealth on x86/macOS/Windows
+
+
 class ScraperConfig:
     """Configuration class for the Patchright scraper."""
 
@@ -129,7 +139,7 @@ class PlaywrightScraper(BaseScraper):
 
         context_options = {
             'user_data_dir': self.temp_user_data_dir,
-            'channel': "chrome",  # Use real Chrome for better stealth
+            'channel': _get_browser_channel(),
             'headless': self.config.headless and not handle_captcha,
             'no_viewport': True,  # Removes viewport fingerprint
             'proxy': {'server': proxy} if proxy else None,
@@ -420,14 +430,17 @@ class PlaywrightScraper(BaseScraper):
             Browser: Launched browser instance
         """
         try:
-            return await playwright.chromium.launch(
-                headless=self.config.headless and not handle_captcha,
-                channel="chrome",  # Use real Chrome for better stealth
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-infobars',
-                      '--window-position=0,0', '--ignore-certifcate-errors',
-                      '--ignore-certifcate-errors-spki-list'],
-                proxy={'server': proxy} if proxy else None
-            )
+            channel = _get_browser_channel()
+            launch_options = {
+                'headless': self.config.headless and not handle_captcha,
+                'args': ['--no-sandbox', '--disable-setuid-sandbox', '--disable-infobars',
+                         '--window-position=0,0', '--ignore-certifcate-errors',
+                         '--ignore-certifcate-errors-spki-list'],
+                'proxy': {'server': proxy} if proxy else None
+            }
+            if channel:
+                launch_options['channel'] = channel
+            return await playwright.chromium.launch(**launch_options)
         except EOFError:
             raise Exception(
                 "Patchright browsers are not installed.\n\n"

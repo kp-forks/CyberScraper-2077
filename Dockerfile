@@ -59,8 +59,8 @@ ENV PATH="/app/venv/bin:$PATH"
 # Added retries and timeout for network reliability
 RUN pip install --no-cache-dir --timeout=120 --retries=3 -r requirements.txt
 
-# Install patchright browsers (package already in requirements.txt)
-RUN patchright install chromium && patchright install chrome
+# Install patchright browser (chrome not available on ARM64)
+RUN patchright install chromium
 
 # Create run script with proper Tor startup
 RUN echo '#!/bin/bash\n\
