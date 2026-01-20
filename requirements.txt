@@ -11,8 +11,8 @@ langchain-openai>=0.0.5
 langchain-google-genai>=0.0.5
 openai>=1.0.0
 
-# Web scraping
-playwright>=1.40.0
+# Web scraping (Patchright = undetected Playwright fork)
+patchright>=1.40.0
 beautifulsoup4>=4.12.0
 lxml>=5.0.0
 

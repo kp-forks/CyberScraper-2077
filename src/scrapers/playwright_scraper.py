@@ -1,12 +1,14 @@
 """
-Playwright Scraper Module
+Patchright Scraper Module
 
-This module provides a robust web scraping implementation using Playwright.
-It supports advanced features like stealth mode, human simulation, CAPTCHA handling,
-and cloudflare bypassing.
+This module provides a robust web scraping implementation using Patchright
+(undetected Playwright fork). It supports advanced features like stealth mode,
+human simulation, CAPTCHA handling, and cloudflare bypassing.
 """
 
-from playwright.async_api import async_playwright, Browser, BrowserContext, Page
+from typing import Any, Dict, List, Optional
+
+from patchright.async_api import async_playwright, Browser, BrowserContext, Page
 from .base_scraper import BaseScraper
 import asyncio
 import random
@@ -22,13 +24,13 @@ from ..utils.error_handler import ErrorMessages
 
 
 class ScraperConfig:
-    """Configuration class for the Playwright scraper."""
+    """Configuration class for the Patchright scraper."""
 
     def __init__(
         self,
         use_stealth: bool = True,
         simulate_human: bool = False,
-        use_custom_headers: bool = True,
+        use_custom_headers: bool = False,  # Disabled by default - creates detection signatures
         hide_webdriver: bool = True,
         bypass_cloudflare: bool = True,
         headless: bool = True,
@@ -36,9 +38,12 @@ class ScraperConfig:
         timeout: int = 30000,
         wait_for: str = 'domcontentloaded',
         use_current_browser: bool = False,
+        use_persistent_context: bool = False,  # Use persistent context for max stealth
         max_retries: int = 3,
         delay_after_load: int = 2,
-        max_concurrent_pages: int = 5
+        max_concurrent_pages: int = 5,
+        locale: str | None = None,  # e.g., 'en-US' - matches browser locale
+        timezone_id: str | None = None,  # e.g., 'America/New_York' - matches browser timezone
     ):
         self.use_stealth = use_stealth
         self.simulate_human = simulate_human
@@ -50,21 +55,25 @@ class ScraperConfig:
         self.timeout = timeout
         self.wait_for = wait_for
         self.use_current_browser = use_current_browser
+        self.use_persistent_context = use_persistent_context
         self.max_retries = max_retries
         self.delay_after_load = delay_after_load
         self.max_concurrent_pages = max_concurrent_pages
+        self.locale = locale
+        self.timezone_id = timezone_id
 
 
 class PlaywrightScraper(BaseScraper):
     """
-    Advanced web scraper implementation using Playwright with browser pooling.
+    Advanced web scraper implementation using Patchright (undetected Playwright fork).
 
     Features:
+    - Undetected browser automation (bypasses Cloudflare, Akamai, etc.)
     - Browser instance reuse for better performance
     - Concurrent page scraping with configurable concurrency
-    - Stealth mode to avoid bot detection
+    - Persistent context support for maximum stealth
     - CAPTCHA handling
-    - Cloudflare bypassing
+    - Automatic stealth patches via Patchright
     """
 
     def __init__(self, config: ScraperConfig | None = None):
@@ -77,6 +86,7 @@ class PlaywrightScraper(BaseScraper):
         # Browser pooling
         self._playwright = None
         self._browser: Browser | None = None
+        self._persistent_context: BrowserContext | None = None
         self._browser_lock = asyncio.Lock()
 
     async def _get_browser(self, proxy: str | None = None, handle_captcha: bool = False) -> Browser:
@@ -87,9 +97,63 @@ class PlaywrightScraper(BaseScraper):
                     self._playwright = await async_playwright().start()
                 if self.config.use_current_browser:
                     self._browser = await self.launch_and_connect_to_chrome(self._playwright)
+                elif self.config.use_persistent_context:
+                    # Persistent context for maximum stealth - returns context, not browser
+                    self._persistent_context = await self.launch_persistent_context(
+                        self._playwright, proxy, handle_captcha
+                    )
+                    self._browser = self._persistent_context.browser
                 else:
                     self._browser = await self.launch_browser(self._playwright, proxy, handle_captcha)
             return self._browser
+
+    async def launch_persistent_context(
+        self, playwright, proxy: Optional[str] = None, handle_captcha: bool = False
+    ) -> BrowserContext:
+        """
+        Launch a persistent browser context for maximum stealth.
+
+        Patchright recommends persistent context with real Chrome for best undetectability.
+        This uses a real Chrome profile which appears more human-like.
+
+        Args:
+            playwright: Patchright instance
+            proxy: Optional proxy server
+            handle_captcha: Whether CAPTCHA handling is enabled
+
+        Returns:
+            BrowserContext: Persistent browser context
+        """
+        if self.temp_user_data_dir is None:
+            self.temp_user_data_dir = tempfile.mkdtemp(prefix="patchright_profile_")
+
+        context_options = {
+            'user_data_dir': self.temp_user_data_dir,
+            'channel': "chrome",  # Use real Chrome for better stealth
+            'headless': self.config.headless and not handle_captcha,
+            'no_viewport': True,  # Removes viewport fingerprint
+            'proxy': {'server': proxy} if proxy else None,
+            'args': ['--no-sandbox', '--disable-setuid-sandbox'],
+            'ignore_https_errors': True,
+            'locale': self.config.locale,
+            'timezone_id': self.config.timezone_id,
+        }
+
+        try:
+            context = await playwright.chromium.launch_persistent_context(
+                **{k: v for k, v in context_options.items() if v is not None}
+            )
+
+            # Note: Init script disabled - Patchright handles stealth automatically
+            # if self.config.use_stealth:
+            #     await self._add_stealth_init_script(context)
+
+            return context
+        except Exception as e:
+            raise Exception(
+                f"Failed to launch persistent context: {str(e)}\n\n"
+                "Make sure Chrome is installed or run: patchright install chrome"
+            )
 
     async def fetch_content(
         self,
@@ -248,6 +312,12 @@ class PlaywrightScraper(BaseScraper):
         """
         import shutil
 
+        # Close persistent context if used
+        if self._persistent_context:
+            await self._persistent_context.close()
+            self._persistent_context = None
+            self.logger.info("Persistent context closed.")
+
         # Close pooled browser
         if self._browser and self._browser.is_connected():
             await self._browser.close()
@@ -325,7 +395,7 @@ class PlaywrightScraper(BaseScraper):
         Launch a new browser instance with specified configuration.
 
         Args:
-            playwright: Playwright instance
+            playwright: Patchright instance
             proxy (Optional[str]): Proxy server to use
             handle_captcha (bool): Whether CAPTCHA handling is enabled
 
@@ -335,6 +405,7 @@ class PlaywrightScraper(BaseScraper):
         try:
             return await playwright.chromium.launch(
                 headless=self.config.headless and not handle_captcha,
+                channel="chrome",  # Use real Chrome for better stealth
                 args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-infobars',
                       '--window-position=0,0', '--ignore-certifcate-errors',
                       '--ignore-certifcate-errors-spki-list'],
@@ -342,9 +413,9 @@ class PlaywrightScraper(BaseScraper):
             )
         except EOFError:
             raise Exception(
-                "Playwright browsers are not installed.\n\n"
-                "Please run: playwright install chromium\n\n"
-                "Or install all browsers: playwright install"
+                "Patchright browsers are not installed.\n\n"
+                "Please run: patchright install chromium\n\n"
+                "Or for better stealth: patchright install chrome"
             )
         except Exception as e:
             raise Exception(f"Failed to launch browser: {str(e)}")
@@ -352,51 +423,116 @@ class PlaywrightScraper(BaseScraper):
     async def create_context(self, browser: Browser, proxy: Optional[str] = None) -> BrowserContext:
         """
         Create a new browser context with specified settings.
-        
+
+        Note: Patchright recommends NOT setting custom user_agent or viewport
+        as these create detection signatures. Let the browser use defaults.
+
         Args:
             browser (Browser): Browser instance
             proxy (Optional[str]): Proxy server to use
-            
+
         Returns:
             BrowserContext: Created browser context
         """
-        return await browser.new_context(
-            viewport={'width': 1920, 'height': 1080},
-            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            proxy={'server': proxy} if proxy else None,
-            java_script_enabled=True,
-            ignore_https_errors=True
-        )
+        context_options = {
+            'proxy': {'server': proxy} if proxy else None,
+            'java_script_enabled': True,
+            'ignore_https_errors': True,
+            'locale': self.config.locale,
+            'timezone_id': self.config.timezone_id,
+        }
+        # Don't set viewport or user_agent - Patchright handles stealth better without them
+        context = await browser.new_context(**{k: v for k, v in context_options.items() if v is not None})
 
-    async def apply_stealth_settings(self, page: Page):
+        # Note: Init script disabled - Patchright handles stealth automatically
+        # If needed, uncomment:
+        # if self.config.use_stealth:
+        #     await self._add_stealth_init_script(context)
+
+        return context
+
+    async def _add_stealth_init_script(self, context: BrowserContext):
         """
-        Apply stealth settings to avoid bot detection.
-        
-        This method modifies browser properties to make automation less detectable.
-        
+        Add init script to context for additional stealth before page scripts run.
+
+        This runs before any page JavaScript executes, patching detection vectors
+        that Patchright might not cover. Uses the Playwright add_init_script API.
+
         Args:
-            page (Page): Playwright page object
+            context: Browser context to add init script to
         """
-        await page.evaluate('''
+        stealth_script = '''
             () => {
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
+                // Patch chrome.runtime to avoid detection
+                if (!window.chrome) {
+                    window.chrome = {};
+                }
+                if (!window.chrome.runtime) {
+                    window.chrome.runtime = {};
+                }
+
+                // Patch plugins array to look like real browser
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => {
+                        const plugins = [
+                            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+                            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+                            { name: 'Native Client', filename: 'internal-nacl-plugin' }
+                        ];
+                        plugins.item = (i) => plugins[i] || null;
+                        plugins.namedItem = (name) => plugins.find(p => p.name === name) || null;
+                        plugins.refresh = () => {};
+                        return plugins;
+                    }
                 });
 
+                // Patch languages to look normal
                 Object.defineProperty(navigator, 'languages', {
                     get: () => ['en-US', 'en']
                 });
 
-                Object.defineProperty(navigator, 'plugins', {
-                    get: () => [1, 2, 3, 4, 5]
+                // Ensure webdriver is not set (Patchright handles this but extra safety)
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
                 });
 
+                // Patch connection info
+                if (navigator.connection) {
+                    Object.defineProperty(navigator.connection, 'rtt', {
+                        get: () => 50
+                    });
+                }
+            }
+        '''
+        await context.add_init_script(stealth_script)
+
+    async def apply_stealth_settings(self, page: Page):
+        """
+        Apply additional stealth settings to avoid bot detection.
+
+        Note: Patchright already handles most stealth features automatically:
+        - navigator.webdriver is already undefined
+        - Automation flags are already removed
+        - Runtime.enable leak is already patched
+
+        This method only applies minimal additional patches that don't interfere.
+
+        Args:
+            page (Page): Patchright page object
+        """
+        # Patchright handles most stealth automatically via isolated contexts
+        # Only apply minimal non-conflicting patches
+        await page.evaluate('''
+            () => {
+                // Patch permissions query for notifications
                 const originalQuery = window.navigator.permissions.query;
-                window.navigator.permissions.query = (parameters) => (
-                    parameters.name === 'notifications' ?
-                        Promise.resolve({ state: Notification.permission }) :
-                        originalQuery(parameters)
-                );
+                if (originalQuery) {
+                    window.navigator.permissions.query = (parameters) => (
+                        parameters.name === 'notifications' ?
+                            Promise.resolve({ state: Notification.permission }) :
+                            originalQuery(parameters)
+                    );
+                }
             }
         ''')
 
@@ -431,6 +567,7 @@ class PlaywrightScraper(BaseScraper):
         Scrape content from single or multiple pages with concurrent execution.
 
         Uses asyncio.gather with a semaphore for controlled concurrency.
+        Supports both regular browser contexts and persistent contexts.
 
         Args:
             browser: Browser instance for creating contexts
@@ -445,19 +582,33 @@ class PlaywrightScraper(BaseScraper):
         if not url_pattern:
             url_pattern = self.detect_url_pattern(base_url)
 
+        # Use persistent context if available, otherwise create new contexts
+        use_persistent = self._persistent_context is not None
+
         if not url_pattern and not pages:
             # Single page scraping
             self.logger.info(f"Scraping single page: {base_url}")
-            context = await self.create_context(browser, proxy)
-            try:
-                page = await context.new_page()
-                if self.config.use_stealth:
-                    await self.apply_stealth_settings(page)
-                await self.set_browser_features(page)
-                content = await self.navigate_and_get_content(page, base_url)
-                return [content]
-            finally:
-                await context.close()
+            if use_persistent:
+                page = await self._persistent_context.new_page()
+                try:
+                    if self.config.use_stealth:
+                        await self.apply_stealth_settings(page)
+                    await self.set_browser_features(page)
+                    content = await self.navigate_and_get_content(page, base_url)
+                    return [content]
+                finally:
+                    await page.close()
+            else:
+                context = await self.create_context(browser, proxy)
+                try:
+                    page = await context.new_page()
+                    if self.config.use_stealth:
+                        await self.apply_stealth_settings(page)
+                    await self.set_browser_features(page)
+                    content = await self.navigate_and_get_content(page, base_url)
+                    return [content]
+                finally:
+                    await context.close()
 
         # Multiple page scraping with concurrency
         page_numbers = self.parse_page_numbers(pages) if pages else [1]
@@ -471,18 +622,29 @@ class PlaywrightScraper(BaseScraper):
         async def scrape_with_context(url: str, page_num: int) -> str:
             async with semaphore:
                 self.logger.info(f"Scraping page {page_num}: {url}")
-                context = await self.create_context(browser, proxy)
-                try:
-                    page = await context.new_page()
-                    if self.config.use_stealth:
-                        await self.apply_stealth_settings(page)
-                    await self.set_browser_features(page)
-                    content = await self.navigate_and_get_content(page, url)
-                    # Small delay between requests to avoid rate limiting
-                    await asyncio.sleep(random.uniform(0.5, 1.5))
-                    return content
-                finally:
-                    await context.close()
+                if use_persistent:
+                    page = await self._persistent_context.new_page()
+                    try:
+                        if self.config.use_stealth:
+                            await self.apply_stealth_settings(page)
+                        await self.set_browser_features(page)
+                        content = await self.navigate_and_get_content(page, url)
+                        await asyncio.sleep(random.uniform(0.5, 1.5))
+                        return content
+                    finally:
+                        await page.close()
+                else:
+                    context = await self.create_context(browser, proxy)
+                    try:
+                        page = await context.new_page()
+                        if self.config.use_stealth:
+                            await self.apply_stealth_settings(page)
+                        await self.set_browser_features(page)
+                        content = await self.navigate_and_get_content(page, url)
+                        await asyncio.sleep(random.uniform(0.5, 1.5))
+                        return content
+                    finally:
+                        await context.close()
 
         # Execute concurrently and maintain order
         tasks = [

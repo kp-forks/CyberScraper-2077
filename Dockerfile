@@ -45,10 +45,9 @@ RUN pip install --no-cache-dir \
     PySocks>=1.7.1 \
     requests[socks]>=2.28.1
 
-# Install playwright and browser
-RUN pip install playwright requests && \
-    playwright install chromium && \
-    playwright install-deps
+# Install patchright (undetected playwright fork) and browser
+RUN pip install patchright requests && \
+    patchright install chromium
 
 # Create run script with proper Tor startup
 RUN echo '#!/bin/bash\n\
