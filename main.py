@@ -1,11 +1,18 @@
 import streamlit as st
 import json
 import asyncio
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 from app.streamlit_web_scraper_chat import StreamlitWebScraperChat
 from app.ui_components import display_info_icons, display_message, extract_data_from_markdown, format_data
 from app.utils import loading_animation, get_loading_message
 from datetime import datetime, timedelta
 from src.ollama_models import OllamaModel
+from src.utils.error_handler import ErrorMessages, check_api_keys
 import pandas as pd
 import base64
 from google_auth_oauthlib.flow import Flow
@@ -17,7 +24,15 @@ from src.scrapers.playwright_scraper import ScraperConfig
 import time
 from urllib.parse import urlparse
 import atexit
-import os
+import logging
+
+logger = logging.getLogger(__name__)
+
+def extract_url(text: str) -> str | None:
+    """Extract URL from anywhere in the text using regex."""
+    pattern = r'https?://[^\s/$.?#][^\s]*'
+    match = re.search(pattern, text, re.IGNORECASE)
+    return match.group(0) if match else None
 
 def handle_oauth_callback():
     if 'code' in st.query_params:
@@ -31,8 +46,12 @@ def handle_oauth_callback():
             st.session_state['google_auth_token'] = flow.credentials.to_json()
             st.success("Successfully authenticated with Google!")
             st.query_params.clear()
+        except FileNotFoundError:
+            st.error(ErrorMessages.OAUTH_FAILED)
+            logger.error("client_secret.json not found")
         except Exception as e:
-            st.error(f"Error during OAuth callback: {str(e)}")
+            st.error(f"{ErrorMessages.OAUTH_FAILED}\n\nDetails: {str(e)}")
+            logger.error(f"OAuth error: {str(e)}")
 
 def serialize_bytesio(obj):
     if isinstance(obj, BytesIO):
@@ -64,29 +83,20 @@ def safe_process_message(web_scraper_chat, message):
     try:
         progress_placeholder = st.empty()
         progress_placeholder.text("Initializing scraper...")
-        
+
         start_time = time.time()
         response = web_scraper_chat.process_message(message)
         end_time = time.time()
-        
+
         progress_placeholder.text(f"Scraping completed in {end_time - start_time:.2f} seconds.")
-        
-        st.write("Debug: Response type:", type(response))
-        
-        if isinstance(response, str):
-            if "Error:" in response:
-                st.error(response)
-            else:
-                st.write("Debug: Response content:", response[:500] + "..." if len(response) > 500 else response)
+
+        # Check for error messages in response
+        if isinstance(response, str) and ("Error:" in response or "Failed to" in response or "is missing" in response):
+            st.error(response)
 
         if isinstance(response, tuple):
-            st.write("Debug: Response is a tuple")
             if len(response) == 2 and isinstance(response[1], pd.DataFrame):
-                st.write("Debug: CSV data detected")
                 csv_string, df = response
-                st.text("CSV Data:")
-                st.code(csv_string, language="csv")
-                st.text("Interactive Table:")
                 st.dataframe(df)
 
                 csv_buffer = BytesIO()
@@ -101,35 +111,19 @@ def safe_process_message(web_scraper_chat, message):
 
                 return csv_string
             elif len(response) == 2 and isinstance(response[0], BytesIO):
-                st.write("Debug: Excel data detected")
                 excel_buffer, df = response
-                st.text("Excel Data:")
                 st.dataframe(df)
 
                 excel_buffer.seek(0)
                 st.download_button(
-                    label="Download Original Excel file",
+                    label="Download Excel",
                     data=excel_buffer,
-                    file_name="data_original.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
-                excel_data = BytesIO()
-                with pd.ExcelWriter(excel_data, engine='xlsxwriter') as writer:
-                    df.to_excel(writer, index=False, sheet_name='Sheet1')
-                excel_data.seek(0)
-
-                st.download_button(
-                    label="Download Excel (from DataFrame)",
-                    data=excel_data,
-                    file_name="data_from_df.xlsx",
+                    file_name="data.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
                 return ("Excel data displayed and available for download.", excel_buffer)
         elif isinstance(response, pd.DataFrame):
-            st.write("Debug: Response is a DataFrame")
-            st.text("Data:")
             st.dataframe(response)
 
             csv_buffer = BytesIO()
@@ -143,13 +137,21 @@ def safe_process_message(web_scraper_chat, message):
             )
 
             return "DataFrame displayed and available for download as CSV."
-        else:
-            st.write("Debug: Response is not a tuple or DataFrame")
 
         return response
+    except ValueError as e:
+        # Handle API key errors specifically
+        error_msg = str(e)
+        if "API Key" in error_msg or "missing" in error_msg.lower():
+            st.error(error_msg)
+        else:
+            st.error(f"{ErrorMessages.SCRAPING_FAILED}\n\nDetails: {error_msg}")
+        logger.error(f"ValueError during processing: {error_msg}")
+        return error_msg
     except Exception as e:
-        st.error(f"An error occurred during scraping: {str(e)}")
-        return f"An unexpected error occurred: {str(e)}. Please try again or contact support if the issue persists."
+        st.error(f"{ErrorMessages.GENERIC_ERROR}\n\nDetails: {str(e)}")
+        logger.error(f"Unexpected error during processing: {str(e)}")
+        return f"{ErrorMessages.GENERIC_ERROR}\n\nDetails: {str(e)}"
 
 def get_date_group(date_str):
     date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -165,8 +167,10 @@ def get_date_group(date_str):
 
 def get_last_url_from_chat(messages):
     for message in reversed(messages):
-        if message['role'] == 'user' and message['content'].lower().startswith('http'):
-            return message['content']
+        if message['role'] == 'user':
+            url = extract_url(message['content'])
+            if url:
+                return url
     return None
 
 def initialize_web_scraper_chat(url=None):
@@ -174,7 +178,7 @@ def initialize_web_scraper_chat(url=None):
         model = st.session_state.selected_model
     else:
         model = st.session_state.selected_model
-    
+
     scraper_config = ScraperConfig(
         use_current_browser=st.session_state.use_current_browser,
         headless=not st.session_state.use_current_browser,
@@ -183,28 +187,41 @@ def initialize_web_scraper_chat(url=None):
         debug=True,
         wait_for='domcontentloaded'
     )
-    
-    web_scraper_chat = StreamlitWebScraperChat(model_name=model, scraper_config=scraper_config)
-    if url:
-        web_scraper_chat.process_message(url)
-        
-        website_name = get_website_name(url)
-        st.session_state.chat_history[st.session_state.current_chat_id]["name"] = website_name
-    
-    return web_scraper_chat
+
+    try:
+        web_scraper_chat = StreamlitWebScraperChat(model_name=model, scraper_config=scraper_config)
+        if url:
+            web_scraper_chat.process_message(url)
+
+            website_name = get_website_name(url)
+            st.session_state.chat_history[st.session_state.current_chat_id]["name"] = website_name
+
+        return web_scraper_chat
+    except ValueError as e:
+        # Handle API key errors
+        st.error(str(e))
+        return None
+    except Exception as e:
+        st.error(f"{ErrorMessages.GENERIC_ERROR}\n\nDetails: {str(e)}")
+        logger.error(f"Error initializing web scraper: {str(e)}")
+        return None
 
 async def list_ollama_models():
     try:
         return await OllamaModel.list_models()
     except Exception as e:
-        st.error(f"Error fetching Ollama models: {str(e)}")
+        logger.warning(f"Error fetching Ollama models: {str(e)}")
+        # Don't show error to user, just return empty list
+        # The warning in the sidebar will guide users
         return []
 
 def load_css():
     with open("app/styles.css", "r") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-def get_image_base64(image_path):
+@st.cache_data
+def get_image_base64(image_path: str) -> str:
+    """Get base64 encoded image with caching to avoid re-encoding on every render."""
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode()
 
@@ -213,7 +230,123 @@ def get_website_name(url: str) -> str:
     domain = parsed_url.netloc
     if domain.startswith('www.'):
         domain = domain[4:]
-    return domain.split('.')[0].capitalize()
+    name = domain.split('.')[0].capitalize()
+    # Truncate long names (e.g., onion URLs)
+    if len(name) > 15:
+        name = name[:12] + "..."
+    return name
+
+
+def check_service_status() -> dict:
+    """Check the status of all services and return a dict with their status."""
+    status = {
+        "openai": {
+            "name": "OpenAI",
+            "configured": bool(os.getenv("OPENAI_API_KEY")),
+            "env_var": "OPENAI_API_KEY"
+        },
+        "gemini": {
+            "name": "Gemini",
+            "configured": bool(os.getenv("GOOGLE_API_KEY")),
+            "env_var": "GOOGLE_API_KEY"
+        },
+        "tor": {
+            "name": "Tor",
+            "configured": False,  # Will be checked dynamically
+            "env_var": None
+        },
+        "google_sheets": {
+            "name": "Google Sheets",
+            "configured": os.path.exists("client_secret.json"),
+            "env_var": "client_secret.json"
+        }
+    }
+
+    # Check Tor status by checking if port 9050 is open
+    import socket
+
+    def is_tor_running():
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex(('127.0.0.1', 9050))
+            sock.close()
+            return result == 0
+        except Exception:
+            return False
+
+    status["tor"]["configured"] = is_tor_running()
+
+    return status
+
+
+def display_service_status():
+    """Display service status with checkmarks/crosses in the sidebar."""
+    status = check_service_status()
+
+    # Inject CSS styles
+    st.markdown("""
+    <style>
+        div[data-testid="stSidebar"] > div:first-child {
+            overflow: visible !important;
+        }
+        .service-status {
+            display: flex;
+            align-items: center;
+            margin: 1px 0;
+        }
+        .status-icon {
+            width: 25px;
+            font-size: 18px;
+            text-align: center;
+            margin-right: 8px;
+        }
+        .status-icon-check {
+            color: #28a745;
+        }
+        .status-icon-cross {
+            color: #dc3545;
+        }
+        .status-text {
+            flex: 1;
+            font-size: 14px;
+        }
+        .status-env {
+            font-size: 11px;
+            color: #6c757d;
+            margin-left: 4px;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("### Setup Status")
+
+    for key, info in status.items():
+        if info["configured"]:
+            icon_html = f'<span class="status-icon status-icon-check">✓</span>'
+            env_html = ""
+        else:
+            icon_html = f'<span class="status-icon status-icon-cross">✗</span>'
+            if info["env_var"]:
+                env_html = f'<span class="status-env">({info["env_var"]})</span>'
+            else:
+                env_html = '<span class="status-env">(Tor not running)</span>'
+
+        html = f"""
+            <div class="service-status">
+                {icon_html}
+                <span class="status-text">{info["name"]}</span>
+                {env_html}
+            </div>
+        """
+        st.markdown(html, unsafe_allow_html=True)
+
+    # Show setup help if any service is missing
+    missing_services = [key for key, info in status.items() if not info["configured"]]
+    if missing_services:
+        st.markdown("---")
+        st.markdown("""<p style="margin: 0; padding: 0; line-height: 1.4;"><strong>Setup Help:</strong><br>
+See <a href="https://github.com/itsOwen/CyberScraper-2077/blob/main/README.md">README</a> for configuration instructions.</p>""", unsafe_allow_html=True)
 
 def render_message(role, content, avatar_path):
     message_class = "user-message" if role == "user" else "assistant-message"
@@ -314,7 +447,7 @@ def main():
             st.session_state.current_chat_id = new_chat_id
             save_chat_history(st.session_state.chat_history)
     if 'selected_model' not in st.session_state:
-        st.session_state.selected_model = "gpt-4o-mini"
+        st.session_state.selected_model = "gpt-4.1-mini"
     if 'web_scraper_chat' not in st.session_state:
         st.session_state.web_scraper_chat = None
 
@@ -323,7 +456,7 @@ def main():
 
         # Model selection
         st.subheader("Select Model")
-        default_models = ["gpt-4o-mini", "gpt-3.5-turbo", "gemini-1.5-flash", "gemini-pro"]
+        default_models = ["gpt-4.1-mini", "gpt-4o-mini", "gemini-1.5-flash", "gemini-pro"]
         ollama_models = st.session_state.get('ollama_models', [])
         all_models = default_models + [f"ollama:{model}" for model in ollama_models]
         selected_model = st.selectbox("Choose a model", all_models, index=all_models.index(st.session_state.selected_model) if st.session_state.selected_model in all_models else 0)
@@ -333,12 +466,10 @@ def main():
             st.session_state.web_scraper_chat = None
             st.rerun()
 
-        # Display warnings for missing API keys
-        if not os.getenv("OPENAI_API_KEY") and any(model.startswith(("gpt-", "text-")) for model in all_models):
-            st.warning("OpenAI API Key is not set. Some models may not be available.")
-        
-        if not os.getenv("GOOGLE_API_KEY") and any(model.startswith("gemini-") for model in all_models):
-            st.warning("Google API Key is not set. Gemini models may not be available.")
+        # Display service status with checkmarks/crosses
+        display_service_status()
+
+        st.markdown("---")
 
         st.session_state.use_current_browser = st.checkbox("Use Current Browser (No Docker)", value=False, help="Works Natively, Doesn't Work with Docker. if a website is blocking your browser, you can use this option to use the current browser instead of opening a new one.")
 
@@ -372,7 +503,7 @@ def main():
             for chat_id, chat_data in chats:
                 button_label = chat_data.get('name', "🗨️ Unnamed Chat")
 
-                col1, col2 = st.columns([0.85, 0.15])
+                col1, col2 = st.columns([0.78, 0.22])
 
                 with col1:
                     if st.button(button_label, key=f"history_{chat_id}", use_container_width=True):
@@ -437,8 +568,9 @@ def main():
         if not st.session_state.web_scraper_chat:
             st.session_state.web_scraper_chat = initialize_web_scraper_chat()
 
-        if prompt.lower().startswith("http"):
-            website_name = get_website_name(prompt)
+        url = extract_url(prompt)
+        if url:
+            website_name = get_website_name(url)
             st.session_state.chat_history[st.session_state.current_chat_id]["name"] = website_name
             st.info(f"Scraping {website_name}... This may take a moment.")
 
@@ -452,7 +584,6 @@ def main():
                 if isinstance(full_response, str) and not full_response.startswith("Error:"):
                     st.success("Scraping completed successfully!")
 
-                st.write("Debug: Full response type:", type(full_response))
                 if full_response is not None:
                     if isinstance(full_response, tuple) and len(full_response) == 2 and isinstance(full_response[1], BytesIO):
                         st.session_state.chat_history[st.session_state.current_chat_id]["messages"].append({"role": "assistant", "content": full_response[0]})

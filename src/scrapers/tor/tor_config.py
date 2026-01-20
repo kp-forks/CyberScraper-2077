@@ -8,7 +8,7 @@ class TorConfig:
     control_port: int = 9051
     debug: bool = False
     max_retries: int = 3
-    timeout: int = 30
+    timeout: int = 120
     circuit_timeout: int = 10
     auto_renew_circuit: bool = True
     verify_connection: bool = True

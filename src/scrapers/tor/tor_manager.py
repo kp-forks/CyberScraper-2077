@@ -1,17 +1,19 @@
-import requests
+import aiohttp
+from aiohttp_socks import ProxyConnector
 import random
 import logging
-import socket
-import socks
-from typing import Dict, Optional
-from urllib.parse import urlparse
+
 from .tor_config import TorConfig
+from .utils import is_onion_url
 from .exceptions import (
-    TorConnectionError, 
-    TorInitializationError, 
+    TorConnectionError,
+    TorInitializationError,
     OnionServiceError,
-    TorProxyError
+    TorProxyError,
+    TorException
 )
+from ...utils.error_handler import ErrorMessages
+
 
 class TorManager:
     def __init__(self, config: TorConfig = TorConfig()):
@@ -19,19 +21,17 @@ class TorManager:
         self.logger.setLevel(logging.DEBUG if config.debug else logging.INFO)
         self.config = config
         self._setup_logging()
-        # Store proxy configuration without applying globally
-        self.proxies = {
-            'http': f'socks5h://127.0.0.1:{self.config.socks_port}',
-            'https': f'socks5h://127.0.0.1:{self.config.socks_port}'
-        }
-        
-    def _setup_logging(self):
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
+        self._session: aiohttp.ClientSession | None = None
+        self._proxy_url = f'socks5://127.0.0.1:{self.config.socks_port}'
 
-    def get_headers(self) -> Dict[str, str]:
+    def _setup_logging(self):
+        if not self.logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
+
+    def get_headers(self) -> dict[str, str]:
         """Get randomized Tor Browser-like headers"""
         return {
             'User-Agent': random.choice(self.config.user_agents),
@@ -47,57 +47,67 @@ class TorManager:
             'Sec-Fetch-User': '?1'
         }
 
-    def get_tor_session(self) -> requests.Session:
-        """Create a requests session that routes through Tor"""
-        session = requests.Session()
-        session.proxies = self.proxies
-        session.headers = self.get_headers()
-        return session
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Get or create an async session with SOCKS proxy connector."""
+        if self._session is None or self._session.closed:
+            connector = ProxyConnector.from_url(self._proxy_url)
+            timeout = aiohttp.ClientTimeout(total=self.config.timeout)
+            self._session = aiohttp.ClientSession(
+                connector=connector,
+                timeout=timeout,
+                headers=self.get_headers()
+            )
+        return self._session
+
+    async def close(self) -> None:
+        """Close the session. Call on shutdown."""
+        if self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
 
     async def verify_tor_connection(self) -> bool:
         """Verify Tor connection is working"""
         try:
-            session = self.get_tor_session()
-            response = session.get('https://check.torproject.org/api/ip', 
-                                 timeout=self.config.timeout)
-            is_tor = response.json().get('IsTor', False)
-            
-            if is_tor:
-                self.logger.info("Successfully connected to Tor network")
-                return True
-            else:
-                raise TorConnectionError("Connection is not using Tor network")
-                
-        except Exception as e:
-            raise TorConnectionError(f"Failed to verify Tor connection: {str(e)}")
+            session = await self._get_session()
+            async with session.get('https://check.torproject.org/api/ip') as response:
+                data = await response.json()
+                is_tor = data.get('IsTor', False)
 
-    @staticmethod
-    def is_onion_url(url: str) -> bool:
-        """Check if the given URL is an onion service"""
-        try:
-            parsed = urlparse(url)
-            return parsed.hostname.endswith('.onion') if parsed.hostname else False
-        except Exception:
-            return False
+                if is_tor:
+                    self.logger.info("Successfully connected to Tor network")
+                    return True
+                else:
+                    raise TorConnectionError("Connection is not using Tor network")
+
+        except aiohttp.ClientError as e:
+            raise TorConnectionError(ErrorMessages.TOR_PROXY_CONNECTION_FAILED)
+        except TorConnectionError:
+            raise
+        except Exception as e:
+            raise TorConnectionError(ErrorMessages.TOR_CONNECTION_ERROR)
 
     async def fetch_content(self, url: str) -> str:
         """Fetch content from an onion site"""
-        if not self.is_onion_url(url):
-            raise OnionServiceError("URL is not a valid onion service")
+        if not is_onion_url(url):
+            raise OnionServiceError(ErrorMessages.ONION_URL_INVALID)
 
         try:
-            session = self.get_tor_session()
-            
             if self.config.verify_connection:
                 await self.verify_tor_connection()
-            
-            response = session.get(url, timeout=self.config.timeout)
-            response.raise_for_status()
-            
-            self.logger.info(f"Successfully fetched content from {url}")
-            return response.text
-            
-        except requests.RequestException as e:
-            raise OnionServiceError(f"Failed to fetch onion content: {str(e)}")
+
+            session = await self._get_session()
+            async with session.get(url) as response:
+                response.raise_for_status()
+                text = await response.text()
+
+                self.logger.info(f"Successfully fetched content from {url}")
+                return text
+
+        except aiohttp.ClientError as e:
+            error_msg = f"{ErrorMessages.TOR_CONNECTION_ERROR}\n\nDetails: {str(e)}"
+            raise OnionServiceError(error_msg)
+        except (OnionServiceError, TorConnectionError):
+            raise
         except Exception as e:
-            raise TorException(f"Unexpected error fetching onion content: {str(e)}")
+            error_msg = f"{ErrorMessages.TOR_CONNECTION_ERROR}\n\nDetails: {str(e)}"
+            raise TorException(error_msg)

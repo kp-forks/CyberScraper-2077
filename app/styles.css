@@ -5,18 +5,33 @@ body {
     color: #333;
 }
 
-/* Header Styles */
-header {
+/* Header Styles - Hide only specific elements, not the sidebar toggle */
+header header {
     visibility: hidden;
+}
+
+/* Keep the menu button visible */
+header button[aria-label="menu"],
+header button[aria-label="Menu"],
+header button[data-testid="icon-button"],
+header button[kind="icon"],
+header button[data-testid="stLogo"] {
+    visibility: visible !important;
+    display: flex !important;
+}
+
+/* Hide deploy button specifically if needed */
+button[data-testid="deployButton"],
+a[href*="share.streamlit.io"],
+a[href*="deploy"] {
+    display: none !important;
 }
 
 .streamlit-footer {
     display: none;
 }
 
-.st-emotion-cache-uf99v8 {
-    display: none;
-}
+/* Removed: .st-emotion-cache-uf99v8 - was hiding sidebar toggle button */
 
 /* Sidebar Styles */
 .stSidebar {
@@ -183,4 +198,27 @@ body.dark-mode {
 
 .delete-button:hover {
     color: #333333;
+}
+
+/* Fix for Streamlit delete button overflow in sidebar - target by data-testid */
+button[data-testid*="delete"] {
+    padding: 0.25rem 0.35rem !important;
+    min-width: unset !important;
+    width: auto !important;
+    height: auto !important;
+    font-size: 1rem !important;
+}
+
+/* Constrain the column containing delete button */
+.stColumns > div:last-child {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow: visible !important;
+}
+
+/* Remove extra margins from buttons in narrow columns */
+.stColumns > div:last-child > button {
+    margin: 0 !important;
+    padding: 0.25rem 0.5rem !important;
 }
