@@ -4,7 +4,7 @@ FROM python:3.12-slim-bookworm
 # Set the working directory in the container
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including browser dependencies for Playwright/Patchright
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -17,6 +17,24 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     libffi-dev \
     procps \
+    # Browser dependencies for Playwright/Patchright
+    libglib2.0-0 \
+    libnspr4 \
+    libnss3 \
+    libdbus-1-3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libxkbcommon0 \
+    libatspi2.0-0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libcairo2 \
+    libpango-1.0-0 \
+    libasound2 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -30,18 +48,19 @@ RUN echo "SocksPort 9050" >> /etc/tor/torrc && \
 RUN chown -R debian-tor:debian-tor /var/lib/tor && \
     chmod 700 /var/lib/tor
 
-# Clone the repository
-RUN git clone https://github.com/itsOwen/CyberScraper-2077.git .
+# Copy local files
+COPY . .
 
 # Create and activate a virtual environment
 RUN python -m venv venv
 ENV PATH="/app/venv/bin:$PATH"
 
 # Install Python dependencies (includes PySocks for Tor support)
-RUN pip install --no-cache-dir -r requirements.txt
+# Added retries and timeout for network reliability
+RUN pip install --no-cache-dir --timeout=120 --retries=3 -r requirements.txt
 
-# Install patchright browser (package already in requirements.txt)
-RUN patchright install chromium
+# Install patchright browsers (package already in requirements.txt)
+RUN patchright install chromium && patchright install chrome
 
 # Create run script with proper Tor startup
 RUN echo '#!/bin/bash\n\

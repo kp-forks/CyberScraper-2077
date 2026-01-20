@@ -1,4 +1,14 @@
+import warnings
+
+# Suppress Pydantic V1 warning - upstream LangChain issue with Python 3.14
+# See: https://github.com/langchain-ai/langchain/issues/33926
+warnings.filterwarnings("ignore", message="Core Pydantic V1 functionality")
+
 import streamlit as st
+
+import streamlit.runtime.scriptrunner_utils.script_run_context as _ctx
+_original_get_script_run_ctx = _ctx.get_script_run_ctx
+_ctx.get_script_run_ctx = lambda suppress_warning=True: _original_get_script_run_ctx(suppress_warning=suppress_warning)
 import json
 import asyncio
 import os
@@ -393,8 +403,12 @@ def display_message_with_sheets_upload(message, message_index):
         st.markdown(str(content))
 
 def cleanup():
-    if 'web_scraper_chat' in st.session_state and st.session_state.web_scraper_chat:
-        del st.session_state.web_scraper_chat
+    """Clean up resources on exit."""
+    try:
+        if 'web_scraper_chat' in st.session_state and st.session_state.web_scraper_chat:
+            del st.session_state.web_scraper_chat
+    except Exception:
+        pass  # Ignore errors during cleanup
 
 atexit.register(cleanup)
 
