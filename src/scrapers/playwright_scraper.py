@@ -1,63 +1,50 @@
 """
-Playwright Scraper Module
+Patchright Scraper Module
 
-This module provides a robust web scraping implementation using Playwright.
-It supports advanced features like stealth mode, human simulation, CAPTCHA handling,
-and cloudflare bypassing.
+This module provides a robust web scraping implementation using Patchright
+(undetected Playwright fork). It supports advanced features like stealth mode,
+human simulation, CAPTCHA handling, and cloudflare bypassing.
 """
 
-from playwright.async_api import async_playwright, Browser, BrowserContext, Page
+from typing import Any, Dict, List, Optional
+
+from patchright.async_api import async_playwright, Browser, BrowserContext, Page
 from .base_scraper import BaseScraper
-from typing import Dict, Any, Optional, List, Tuple
 import asyncio
 import random
 import logging
-import re
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 import platform
 import subprocess
-import time
 import os
 import tempfile
+import aioconsole
+
+from ..utils.error_handler import ErrorMessages
 
 
 class ScraperConfig:
-    """
-    Configuration class for the Playwright scraper.
-    
-    This class holds all configuration options for customizing the scraping behavior.
-    """
-    
-    def __init__(self,
-                 use_stealth: bool = True,
-                 simulate_human: bool = False,
-                 use_custom_headers: bool = True,
-                 hide_webdriver: bool = True,
-                 bypass_cloudflare: bool = True,
-                 headless: bool = True,
-                 debug: bool = False,
-                 timeout: int = 30000,
-                 wait_for: str = 'domcontentloaded',
-                 use_current_browser: bool = False,
-                 max_retries: int = 3,
-                 delay_after_load: int = 2):
-        """
-        Initialize scraper configuration.
-        
-        Args:
-            use_stealth (bool): Enable stealth mode to avoid detection
-            simulate_human (bool): Simulate human-like browsing behavior
-            use_custom_headers (bool): Use custom HTTP headers
-            hide_webdriver (bool): Hide webdriver indicators
-            bypass_cloudflare (bool): Attempt to bypass Cloudflare protection
-            headless (bool): Run browser in headless mode
-            debug (bool): Enable debug logging
-            timeout (int): Navigation timeout in milliseconds
-            wait_for (str): When to consider navigation succeeded
-            use_current_browser (bool): Connect to existing browser instance
-            max_retries (int): Maximum number of retry attempts
-            delay_after_load (int): Delay in seconds after page load
-        """
+    """Configuration class for the Patchright scraper."""
+
+    def __init__(
+        self,
+        use_stealth: bool = True,
+        simulate_human: bool = False,
+        use_custom_headers: bool = False,  # Disabled by default - creates detection signatures
+        hide_webdriver: bool = True,
+        bypass_cloudflare: bool = True,
+        headless: bool = True,
+        debug: bool = False,
+        timeout: int = 30000,
+        wait_for: str = 'domcontentloaded',
+        use_current_browser: bool = False,
+        use_persistent_context: bool = False,  # Use persistent context for max stealth
+        max_retries: int = 3,
+        delay_after_load: int = 2,
+        max_concurrent_pages: int = 5,
+        locale: str | None = None,  # e.g., 'en-US' - matches browser locale
+        timezone_id: str | None = None,  # e.g., 'America/New_York' - matches browser timezone
+    ):
         self.use_stealth = use_stealth
         self.simulate_human = simulate_human
         self.use_custom_headers = use_custom_headers
@@ -68,59 +55,132 @@ class ScraperConfig:
         self.timeout = timeout
         self.wait_for = wait_for
         self.use_current_browser = use_current_browser
+        self.use_persistent_context = use_persistent_context
         self.max_retries = max_retries
         self.delay_after_load = delay_after_load
+        self.max_concurrent_pages = max_concurrent_pages
+        self.locale = locale
+        self.timezone_id = timezone_id
 
 
 class PlaywrightScraper(BaseScraper):
     """
-    Advanced web scraper implementation using Playwright.
-    
-    This scraper provides advanced features for web scraping including:
-    - Stealth mode to avoid bot detection
-    - Human behavior simulation
+    Advanced web scraper implementation using Patchright (undetected Playwright fork).
+
+    Features:
+    - Undetected browser automation (bypasses Cloudflare, Akamai, etc.)
+    - Browser instance reuse for better performance
+    - Concurrent page scraping with configurable concurrency
+    - Persistent context support for maximum stealth
     - CAPTCHA handling
-    - Cloudflare bypassing
-    - Multi-page scraping
+    - Automatic stealth patches via Patchright
     """
-    
-    def __init__(self, config: ScraperConfig = ScraperConfig()):
-        """
-        Initialize the Playwright scraper.
-        
-        Args:
-            config (ScraperConfig): Configuration options for the scraper
-        """
+
+    def __init__(self, config: ScraperConfig | None = None):
+        config = config or ScraperConfig()
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.DEBUG if config.debug else logging.INFO)
         self.config = config
         self.chrome_process = None
         self.temp_user_data_dir = None
+        # Browser pooling
+        self._playwright = None
+        self._browser: Browser | None = None
+        self._persistent_context: BrowserContext | None = None
+        self._browser_lock = asyncio.Lock()
 
-    async def fetch_content(self, url: str, proxy: Optional[str] = None, pages: Optional[str] = None, url_pattern: Optional[str] = None, handle_captcha: bool = False) -> List[str]:
+    async def _get_browser(self, proxy: str | None = None, handle_captcha: bool = False) -> Browser:
+        """Get or create a pooled browser instance with thread-safe locking."""
+        async with self._browser_lock:
+            if self._browser is None or not self._browser.is_connected():
+                if self._playwright is None:
+                    self._playwright = await async_playwright().start()
+                if self.config.use_current_browser:
+                    self._browser = await self.launch_and_connect_to_chrome(self._playwright)
+                elif self.config.use_persistent_context:
+                    # Persistent context for maximum stealth - returns context, not browser
+                    self._persistent_context = await self.launch_persistent_context(
+                        self._playwright, proxy, handle_captcha
+                    )
+                    self._browser = self._persistent_context.browser
+                else:
+                    self._browser = await self.launch_browser(self._playwright, proxy, handle_captcha)
+            return self._browser
+
+    async def launch_persistent_context(
+        self, playwright, proxy: Optional[str] = None, handle_captcha: bool = False
+    ) -> BrowserContext:
         """
-        Fetch content from a given URL using Playwright.
-        
-        This method handles the entire scraping workflow including browser setup,
-        page navigation, and content extraction.
-        
+        Launch a persistent browser context for maximum stealth.
+
+        Patchright recommends persistent context with real Chrome for best undetectability.
+        This uses a real Chrome profile which appears more human-like.
+
         Args:
-            url (str): The URL to fetch content from
-            proxy (Optional[str]): Proxy server to use for the request
-            pages (Optional[str]): Page numbers to scrape (e.g., "1-5" or "1,3,5")
-            url_pattern (Optional[str]): Pattern for constructing multi-page URLs
-            handle_captcha (bool): Whether to pause for CAPTCHA solving
-            
-        Returns:
-            List[str]: List of content strings from scraped pages
-        """
-        async with async_playwright() as p:
-            if self.config.use_current_browser:
-                browser = await self.launch_and_connect_to_chrome(p)
-            else:
-                browser = await self.launch_browser(p, proxy, handle_captcha)
+            playwright: Patchright instance
+            proxy: Optional proxy server
+            handle_captcha: Whether CAPTCHA handling is enabled
 
-            try:
+        Returns:
+            BrowserContext: Persistent browser context
+        """
+        if self.temp_user_data_dir is None:
+            self.temp_user_data_dir = tempfile.mkdtemp(prefix="patchright_profile_")
+
+        context_options = {
+            'user_data_dir': self.temp_user_data_dir,
+            'channel': "chrome",  # Use real Chrome for better stealth
+            'headless': self.config.headless and not handle_captcha,
+            'no_viewport': True,  # Removes viewport fingerprint
+            'proxy': {'server': proxy} if proxy else None,
+            'args': ['--no-sandbox', '--disable-setuid-sandbox'],
+            'ignore_https_errors': True,
+            'locale': self.config.locale,
+            'timezone_id': self.config.timezone_id,
+        }
+
+        try:
+            context = await playwright.chromium.launch_persistent_context(
+                **{k: v for k, v in context_options.items() if v is not None}
+            )
+
+            # Note: Init script disabled - Patchright handles stealth automatically
+            # if self.config.use_stealth:
+            #     await self._add_stealth_init_script(context)
+
+            return context
+        except Exception as e:
+            raise Exception(
+                f"Failed to launch persistent context: {str(e)}\n\n"
+                "Make sure Chrome is installed or run: patchright install chrome"
+            )
+
+    async def fetch_content(
+        self,
+        url: str,
+        proxy: str | None = None,
+        pages: str | None = None,
+        url_pattern: str | None = None,
+        handle_captcha: bool = False
+    ) -> list[str]:
+        """
+        Fetch content from a given URL using Playwright with browser pooling.
+
+        Args:
+            url: The URL to fetch content from
+            proxy: Proxy server to use for the request
+            pages: Page numbers to scrape (e.g., "1-5" or "1,3,5")
+            url_pattern: Pattern for constructing multi-page URLs
+            handle_captcha: Whether to pause for CAPTCHA solving
+
+        Returns:
+            List of content strings from scraped pages
+        """
+        browser = await self._get_browser(proxy, handle_captcha)
+        context = None
+        try:
+            if handle_captcha:
+                # For CAPTCHA mode: create context, handle CAPTCHA, then scrape pages
                 context = await self.create_context(browser, proxy)
                 page = await context.new_page()
 
@@ -128,54 +188,92 @@ class PlaywrightScraper(BaseScraper):
                     await self.apply_stealth_settings(page)
                 await self.set_browser_features(page)
 
-                if handle_captcha:
-                    await self.handle_captcha(page, url)
-                
-                contents = await self.scrape_multiple_pages(page, url, pages, url_pattern)
-            except Exception as e:
-                self.logger.error(f"Error during scraping: {str(e)}")
-                contents = [f"Error: {str(e)}"]
-            finally:
-                if not self.config.use_current_browser:
-                    await browser.close()
-                    self.logger.info("Browser closed after scraping.")
+                await self.handle_captcha(page, url)
+
+                # After CAPTCHA is solved, get content from the current page
+                await asyncio.sleep(self.config.delay_after_load)
+                first_page_content = await page.content()
+
+                # Check if we need to scrape multiple pages
+                if pages:
+                    page_numbers = self.parse_page_numbers(pages)
+                    if not url_pattern:
+                        url_pattern = self.detect_url_pattern(url)
+
+                    contents = [first_page_content]  # First page already scraped
+
+                    # Scrape remaining pages (skip first one since we already have it)
+                    for page_num in page_numbers[1:]:
+                        page_url = self.apply_url_pattern(url, url_pattern, page_num) if url_pattern else url
+                        self.logger.info(f"Scraping page {page_num}: {page_url}")
+                        await page.goto(page_url, wait_until=self.config.wait_for, timeout=self.config.timeout)
+                        await asyncio.sleep(self.config.delay_after_load)
+                        content = await page.content()
+                        contents.append(content)
+                else:
+                    contents = [first_page_content]
+            else:
+                # Normal mode: use scrape_multiple_pages
+                contents = await self.scrape_multiple_pages(browser, url, pages, url_pattern, proxy)
+        except Exception as e:
+            import traceback
+            error_details = f"{type(e).__name__}: {str(e)}"
+            self.logger.error(f"Error during scraping: {error_details}")
+            self.logger.error(traceback.format_exc())
+            contents = [f"Error: {error_details}"]
+        finally:
+            if context:
+                await context.close()
+            # Close browser after CAPTCHA mode to clean up the visible window
+            if handle_captcha and self._browser and self._browser.is_connected():
+                await self._browser.close()
+                self._browser = None
 
         return contents
 
     async def handle_captcha(self, page: Page, url: str):
         """
         Handle CAPTCHA solving by pausing execution and waiting for user input.
-        
+
         This method navigates to the URL and waits for the user to solve any CAPTCHAs
         manually before continuing with the scraping process.
-        
+
         Args:
             page (Page): Playwright page object
             url (str): URL to navigate to for CAPTCHA solving
         """
         self.logger.info("Waiting for user to solve CAPTCHA...")
-        await page.goto(url, wait_until=self.config.wait_for, timeout=self.config.timeout)
-        
-        print("Please solve the CAPTCHA in the browser window.")
-        print("Once solved, press Enter in this console to continue...")
-        input()
-        
-        await page.wait_for_load_state('networkidle')
-        self.logger.info("CAPTCHA handling completed.")
+        try:
+            await page.goto(url, wait_until=self.config.wait_for, timeout=self.config.timeout)
+
+            print("Please solve the CAPTCHA in the browser window.")
+            print("Once solved, press Enter in this console to continue...")
+            await aioconsole.ainput()
+
+            # Use 'load' instead of 'networkidle' - modern sites never reach networkidle
+            # due to constant analytics/tracking requests
+            await page.wait_for_load_state('load', timeout=5000)
+            self.logger.info("CAPTCHA handling completed.")
+        except Exception as e:
+            # Handle browser closure or timeout gracefully
+            if "closed" in str(e).lower():
+                self.logger.warning("Browser was closed during CAPTCHA handling")
+                raise
+            self.logger.warning(f"CAPTCHA wait completed with: {e}")
 
     async def launch_and_connect_to_chrome(self, playwright):
         """
         Launch a new Chrome instance with remote debugging enabled and connect to it.
-        
+
         This method creates a temporary user data directory and launches Chrome
         with remote debugging on port 9222, then connects to it via Playwright.
-        
+
         Args:
             playwright: Playwright instance
-            
+
         Returns:
             Browser: Connected browser instance
-            
+
         Raises:
             Exception: If unable to connect to Chrome after 30 seconds
         """
@@ -200,16 +298,16 @@ class PlaywrightScraper(BaseScraper):
             except Exception as e:
                 self.logger.debug(f"Connection attempt failed: {str(e)}")
                 await asyncio.sleep(1)
-        
+
         raise Exception("Failed to connect to Chrome after 30 seconds")
 
     def get_chrome_executable(self):
         """
-        Get the path to the Chrome executable based on the operating system.
-        
+        Get the path to Chrome executable based on the operating system.
+
         Returns:
             str: Path to Chrome executable
-            
+
         Raises:
             NotImplementedError: If the operating system is not supported
         """
@@ -218,38 +316,71 @@ class PlaywrightScraper(BaseScraper):
             return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
         elif system == "Linux":
             return "google-chrome"
+        elif system == "Windows":
+            return "chrome"
         else:
             raise NotImplementedError(f"Unsupported operating system: {system}")
 
-    def __del__(self):
+    async def close(self) -> None:
         """
-        Cleanup method to terminate Chrome process and remove temporary directories.
-        
-        This method is called when the scraper object is destroyed to ensure
-        proper cleanup of system resources.
+        Clean up resources including browser, Chrome process, and temp directories.
+
+        This should be called when done using the scraper, or use it as an async context manager.
         """
+        import shutil
+
+        # Close persistent context if used
+        if self._persistent_context:
+            await self._persistent_context.close()
+            self._persistent_context = None
+            self.logger.info("Persistent context closed.")
+
+        # Close pooled browser
+        if self._browser and self._browser.is_connected():
+            await self._browser.close()
+            self._browser = None
+            self.logger.info("Browser closed.")
+
+        # Stop playwright
+        if self._playwright:
+            await self._playwright.stop()
+            self._playwright = None
+
+        # Terminate Chrome process if we started one
         if self.chrome_process:
             self.chrome_process.terminate()
             self.chrome_process.wait()
+            self.chrome_process = None
             self.logger.info("Chrome process terminated.")
+
+        # Remove temp directory
         if self.temp_user_data_dir:
-            import shutil
             shutil.rmtree(self.temp_user_data_dir, ignore_errors=True)
             self.logger.info(f"Temporary user data directory removed: {self.temp_user_data_dir}")
+            self.temp_user_data_dir = None
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit with cleanup."""
+        await self.close()
+        return False
 
     async def connect_to_current_browser(self, playwright):
         """
         Connect to an existing browser instance with remote debugging enabled.
-        
+
         This method launches a browser with remote debugging and attempts to
         connect to it via Playwright.
-        
+
         Args:
             playwright: Playwright instance
-            
+
         Returns:
             Browser: Connected browser instance
-            
+
         Raises:
             NotImplementedError: If the operating system is not supported
             Exception: If unable to connect to the browser after 30 seconds
@@ -273,77 +404,152 @@ class PlaywrightScraper(BaseScraper):
             except Exception as e:
                 self.logger.debug(f"Connection attempt failed: {str(e)}")
                 await asyncio.sleep(1)
-        
+
         raise Exception("Failed to connect to the current browser after 30 seconds")
 
     async def launch_browser(self, playwright, proxy: Optional[str] = None, handle_captcha: bool = False) -> Browser:
         """
         Launch a new browser instance with specified configuration.
-        
+
         Args:
-            playwright: Playwright instance
+            playwright: Patchright instance
             proxy (Optional[str]): Proxy server to use
             handle_captcha (bool): Whether CAPTCHA handling is enabled
-            
+
         Returns:
             Browser: Launched browser instance
         """
-        return await playwright.chromium.launch(
-            headless=self.config.headless and not handle_captcha,
-            args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-infobars',
-                  '--window-position=0,0', '--ignore-certifcate-errors',
-                  '--ignore-certifcate-errors-spki-list'],
-            proxy={'server': proxy} if proxy else None
-        )
+        try:
+            return await playwright.chromium.launch(
+                headless=self.config.headless and not handle_captcha,
+                channel="chrome",  # Use real Chrome for better stealth
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-infobars',
+                      '--window-position=0,0', '--ignore-certifcate-errors',
+                      '--ignore-certifcate-errors-spki-list'],
+                proxy={'server': proxy} if proxy else None
+            )
+        except EOFError:
+            raise Exception(
+                "Patchright browsers are not installed.\n\n"
+                "Please run: patchright install chromium\n\n"
+                "Or for better stealth: patchright install chrome"
+            )
+        except Exception as e:
+            raise Exception(f"Failed to launch browser: {str(e)}")
 
     async def create_context(self, browser: Browser, proxy: Optional[str] = None) -> BrowserContext:
         """
         Create a new browser context with specified settings.
-        
+
+        Note: Patchright recommends NOT setting custom user_agent or viewport
+        as these create detection signatures. Let the browser use defaults.
+
         Args:
             browser (Browser): Browser instance
             proxy (Optional[str]): Proxy server to use
-            
+
         Returns:
             BrowserContext: Created browser context
         """
-        return await browser.new_context(
-            viewport={'width': 1920, 'height': 1080},
-            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            proxy={'server': proxy} if proxy else None,
-            java_script_enabled=True,
-            ignore_https_errors=True
-        )
+        context_options = {
+            'proxy': {'server': proxy} if proxy else None,
+            'java_script_enabled': True,
+            'ignore_https_errors': True,
+            'locale': self.config.locale,
+            'timezone_id': self.config.timezone_id,
+        }
+        # Don't set viewport or user_agent - Patchright handles stealth better without them
+        context = await browser.new_context(**{k: v for k, v in context_options.items() if v is not None})
 
-    async def apply_stealth_settings(self, page: Page):
+        # Note: Init script disabled - Patchright handles stealth automatically
+        # If needed, uncomment:
+        # if self.config.use_stealth:
+        #     await self._add_stealth_init_script(context)
+
+        return context
+
+    async def _add_stealth_init_script(self, context: BrowserContext):
         """
-        Apply stealth settings to avoid bot detection.
-        
-        This method modifies browser properties to make automation less detectable.
-        
+        Add init script to context for additional stealth before page scripts run.
+
+        This runs before any page JavaScript executes, patching detection vectors
+        that Patchright might not cover. Uses the Playwright add_init_script API.
+
         Args:
-            page (Page): Playwright page object
+            context: Browser context to add init script to
         """
-        await page.evaluate('''
+        stealth_script = '''
             () => {
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
+                // Patch chrome.runtime to avoid detection
+                if (!window.chrome) {
+                    window.chrome = {};
+                }
+                if (!window.chrome.runtime) {
+                    window.chrome.runtime = {};
+                }
+
+                // Patch plugins array to look like real browser
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => {
+                        const plugins = [
+                            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+                            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+                            { name: 'Native Client', filename: 'internal-nacl-plugin' }
+                        ];
+                        plugins.item = (i) => plugins[i] || null;
+                        plugins.namedItem = (name) => plugins.find(p => p.name === name) || null;
+                        plugins.refresh = () => {};
+                        return plugins;
+                    }
                 });
 
+                // Patch languages to look normal
                 Object.defineProperty(navigator, 'languages', {
                     get: () => ['en-US', 'en']
                 });
 
-                Object.defineProperty(navigator, 'plugins', {
-                    get: () => [1, 2, 3, 4, 5]
+                // Ensure webdriver is not set (Patchright handles this but extra safety)
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
                 });
 
+                // Patch connection info
+                if (navigator.connection) {
+                    Object.defineProperty(navigator.connection, 'rtt', {
+                        get: () => 50
+                    });
+                }
+            }
+        '''
+        await context.add_init_script(stealth_script)
+
+    async def apply_stealth_settings(self, page: Page):
+        """
+        Apply additional stealth settings to avoid bot detection.
+
+        Note: Patchright already handles most stealth features automatically:
+        - navigator.webdriver is already undefined
+        - Automation flags are already removed
+        - Runtime.enable leak is already patched
+
+        This method only applies minimal additional patches that don't interfere.
+
+        Args:
+            page (Page): Patchright page object
+        """
+        # Patchright handles most stealth automatically via isolated contexts
+        # Only apply minimal non-conflicting patches
+        await page.evaluate('''
+            () => {
+                // Patch permissions query for notifications
                 const originalQuery = window.navigator.permissions.query;
-                window.navigator.permissions.query = (parameters) => (
-                    parameters.name === 'notifications' ?
-                        Promise.resolve({ state: Notification.permission }) :
-                        originalQuery(parameters)
-                );
+                if (originalQuery) {
+                    window.navigator.permissions.query = (parameters) => (
+                        parameters.name === 'notifications' ?
+                            Promise.resolve({ state: Notification.permission }) :
+                            originalQuery(parameters)
+                    );
+                }
             }
         ''')
 
@@ -366,54 +572,112 @@ class PlaywrightScraper(BaseScraper):
                 'Upgrade-Insecure-Requests': '1'
             })
 
-    async def scrape_multiple_pages(self, page: Page, base_url: str, pages: Optional[str] = None, url_pattern: Optional[str] = None) -> List[str]:
+    async def scrape_multiple_pages(
+        self,
+        browser: Browser,
+        base_url: str,
+        pages: str | None = None,
+        url_pattern: str | None = None,
+        proxy: str | None = None
+    ) -> list[str]:
         """
-        Scrape content from single or multiple pages.
-        
-        This method handles both single page and multi-page scraping scenarios.
-        
-        Args:
-            page (Page): Playwright page object
-            base_url (str): Base URL to scrape
-            pages (Optional[str]): Page numbers to scrape
-            url_pattern (Optional[str]): Pattern for constructing multi-page URLs
-            
-        Returns:
-            List[str]: List of content strings from scraped pages
-        """
-        contents = []
+        Scrape content from single or multiple pages with concurrent execution.
 
+        Uses asyncio.gather with a semaphore for controlled concurrency.
+        Supports both regular browser contexts and persistent contexts.
+
+        Args:
+            browser: Browser instance for creating contexts
+            base_url: Base URL to scrape
+            pages: Page numbers to scrape
+            url_pattern: Pattern for constructing multi-page URLs
+            proxy: Optional proxy for context creation
+
+        Returns:
+            List of content strings from scraped pages
+        """
         if not url_pattern:
             url_pattern = self.detect_url_pattern(base_url)
+
+        # Use persistent context if available, otherwise create new contexts
+        use_persistent = self._persistent_context is not None
 
         if not url_pattern and not pages:
             # Single page scraping
             self.logger.info(f"Scraping single page: {base_url}")
-            content = await self.navigate_and_get_content(page, base_url)
-            contents.append(content)
-        else:
-            # Multiple page scraping
-            page_numbers = self.parse_page_numbers(pages) if pages else [1]
-            for page_num in page_numbers:
-                current_url = self.apply_url_pattern(base_url, url_pattern, page_num) if url_pattern else base_url
-                self.logger.info(f"Scraping page {page_num}: {current_url}")
+            if use_persistent:
+                page = await self._persistent_context.new_page()
+                try:
+                    if self.config.use_stealth:
+                        await self.apply_stealth_settings(page)
+                    await self.set_browser_features(page)
+                    content = await self.navigate_and_get_content(page, base_url)
+                    return [content]
+                finally:
+                    await page.close()
+            else:
+                context = await self.create_context(browser, proxy)
+                try:
+                    page = await context.new_page()
+                    if self.config.use_stealth:
+                        await self.apply_stealth_settings(page)
+                    await self.set_browser_features(page)
+                    content = await self.navigate_and_get_content(page, base_url)
+                    return [content]
+                finally:
+                    await context.close()
 
-                content = await self.navigate_and_get_content(page, current_url)
-                contents.append(content)
+        # Multiple page scraping with concurrency
+        page_numbers = self.parse_page_numbers(pages) if pages else [1]
+        urls = [
+            self.apply_url_pattern(base_url, url_pattern, page_num) if url_pattern else base_url
+            for page_num in page_numbers
+        ]
 
-                if page_num < len(page_numbers):
-                    await asyncio.sleep(random.uniform(1, 2))
+        semaphore = asyncio.Semaphore(self.config.max_concurrent_pages)
 
-        return contents
+        async def scrape_with_context(url: str, page_num: int) -> str:
+            async with semaphore:
+                self.logger.info(f"Scraping page {page_num}: {url}")
+                if use_persistent:
+                    page = await self._persistent_context.new_page()
+                    try:
+                        if self.config.use_stealth:
+                            await self.apply_stealth_settings(page)
+                        await self.set_browser_features(page)
+                        content = await self.navigate_and_get_content(page, url)
+                        await asyncio.sleep(random.uniform(0.5, 1.5))
+                        return content
+                    finally:
+                        await page.close()
+                else:
+                    context = await self.create_context(browser, proxy)
+                    try:
+                        page = await context.new_page()
+                        if self.config.use_stealth:
+                            await self.apply_stealth_settings(page)
+                        await self.set_browser_features(page)
+                        content = await self.navigate_and_get_content(page, url)
+                        await asyncio.sleep(random.uniform(0.5, 1.5))
+                        return content
+                    finally:
+                        await context.close()
+
+        # Execute concurrently and maintain order
+        tasks = [
+            scrape_with_context(url, page_num)
+            for page_num, url in zip(page_numbers, urls)
+        ]
+        return await asyncio.gather(*tasks)
 
     async def navigate_and_get_content(self, page: Page, url: str) -> str:
         """
         Navigate to a URL and extract its content.
-        
+
         Args:
             page (Page): Playwright page object
             url (str): URL to navigate to
-            
+
         Returns:
             str: Page content or error message
         """
@@ -421,16 +685,20 @@ class PlaywrightScraper(BaseScraper):
             self.logger.info(f"Navigating to {url}")
             await page.goto(url, wait_until=self.config.wait_for, timeout=self.config.timeout)
             self.logger.info(f"Successfully loaded {url}")
-            
+
             await asyncio.sleep(self.config.delay_after_load)
-            
+
             self.logger.info("Extracting page content")
             content = await page.content()
             self.logger.info(f"Successfully extracted content (length: {len(content)})")
             return content
+        except asyncio.TimeoutError:
+            self.logger.error(f"Timeout loading {url}")
+            return f"Error: {ErrorMessages.TIMEOUT_ERROR}"
         except Exception as e:
             self.logger.error(f"Error navigating to {url}: {str(e)}")
-            return f"Error: Failed to load {url}. {str(e)}"
+            error_details = str(e) if len(str(e)) < 200 else str(e)[:200] + "..."
+            return f"Error: {ErrorMessages.SCRAPING_FAILED}\n\nDetails: {error_details}"
 
     async def bypass_cloudflare(self, page: Page, url: str) -> str:
         """

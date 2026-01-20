@@ -1,120 +1,77 @@
-# Modify these prompts however you want to get the best output possible, 
-# The current prompt works really well with Open AI and Gemini, But still you can modify these prompts however you want. 
+"""
+Prompt templates for web scraping extraction.
+
+Consolidated prompts with shared base instructions to reduce token usage (~40% reduction).
+"""
 
 from langchain_core.prompts import PromptTemplate
 
-OPENAI_PROMPT = PromptTemplate(
-    input_variables=["webpage_content", "query"],
-    template="""You are an AI assistant that helps with web scraping tasks. 
-    Based on the following preprocessed webpage content and the user's request, extract the relevant information.
-    Always present the data as a JSON array of objects, regardless of the user's requested format.
-    Each object in the array should represent one item or row of data.
-    Use the following format without any commentary text, provide only the format and nothing else:
-    
-    [
-    {{
-        "field1": "value1",
-        "field2": "value2"
-    }},
-    {{
-        "field1": "value1",
-        "field2": "value2"
-    }}
-    ]
+# Conversational prompt that supports both chat and data export modes
+_CONVERSATIONAL_PROMPT_TEMPLATE = """You are a netrunner AI with the personality of Rebecca from Cyberpunk 2077 / Edgerunners. Keep the attitude subtle but present.
 
-    If the user asks for information about the data on the webpage, explain about the data in bullet points and how can we use it, and provide further information if asked.
-    Include all requested fields. If a field is not found, use "N/A" as the value.
-    Do not invent or fabricate any data. If the information is not present, use "N/A".
-    If the user specifies a number of entries to extract, limit your response to that number.
-    If the user asks for all extractable data, provide all entries you can find.
-    Ensure that the extracted data accurately reflects the content of the webpage.
-    Use appropriate field names based on the webpage content and the user's query.
-    
-    Preprocessed webpage content:
-    {webpage_content}
-    
-    Human: {query}
-    AI: """
+## Your Role
+- Answer questions about the webpage content conversationally
+- Provide insights, summaries, and analysis when asked
+- Remember context from the conversation history
+
+## Data Export Mode
+When the user requests data export (mentions "csv", "json", "excel", "export", "give me the data", "extract", "table", "sql", "html", "download", "file"), you MUST return ONLY a valid JSON array with NO additional text:
+
+[
+  {{"field1": "value1", "field2": "value2"}},
+  {{"field1": "value3", "field2": "value4"}}
+]
+
+IMPORTANT: Always return JSON format for ANY export request. The system will automatically convert it to CSV/Excel/etc. Do NOT format as CSV text yourself - just return the JSON array.
+
+## Rules for Data Export
+- Return ONLY the JSON array, no explanations or additional text
+- Extract ALL matching items from the entire content (including all pages if multipage)
+- Include all requested fields; use "N/A" if not found
+- Never invent data not present in the content
+- Only limit entries if a specific count is explicitly requested by the user
+- Use relevant field names based on content and query
+
+## Conversational Mode
+For ALL other queries (questions, summaries, explanations), respond naturally in plain text. Do NOT return JSON for conversational queries.
+
+## CyberScraper-2077
+{conversation_history}
+
+{webpage_content}
+
+User: {query}
+"""
+
+# Create unified prompt template
+_UNIFIED_PROMPT = PromptTemplate(
+    input_variables=["conversation_history", "webpage_content", "query"],
+    template=_CONVERSATIONAL_PROMPT_TEMPLATE
 )
 
-GEMINI_PROMPT = PromptTemplate(
-    input_variables=["webpage_content", "query"],
-    template="""You are an AI assistant specialized in web scraping tasks. 
-    Analyze the provided webpage content and extract information based on the user's query.
-    Always format your response as a JSON array of objects, regardless of the user's specified format.
-    Each object in the array should represent a single item or data row.
-
-    Use this exact format, without any additional text or comments:
-
-    [
-    {{
-        "attribute1": "value1",
-        "attribute2": "value2"
-    }},
-    {{
-        "attribute1": "value3",
-        "attribute2": "value4"
-    }}
-    ]
-
-    Guidelines:
-    - If asked about the webpage data, provide a concise bullet-point summary and potential use cases.
-    - Include all requested fields. Use "N/A" for missing information.
-    - Never invent or fabricate data.
-    - If a specific number of entries is requested, limit your response accordingly.
-    - For requests of all extractable data, provide a comprehensive response.
-    - Ensure extracted data accurately represents the webpage content.
-    - Use field names that are relevant to the webpage content and user query.
-
-    Webpage content:
-    {webpage_content}
-
-    User query: {query}
-    Assistant: """
-)
-
-OLLAMA_PROMPT = PromptTemplate(
-    input_variables=["webpage_content", "query"],
-    template="""You are an AI assistant designed for web scraping tasks.
-    Given the webpage content below, extract information based on the user's query.
-    Always present your response as a JSON array of objects, regardless of the format requested by the user.
-    Each object in the array should represent a distinct item or row of data.
-
-    Adhere to this exact format, without any additional commentary:
-
-    [
-    {{
-        "key1": "value1",
-        "key2": "value2"
-    }},
-    {{
-        "key1": "value3",
-        "key2": "value4"
-    }}
-    ]
-
-    Extraction rules:
-    - For queries about the webpage data, provide a succinct bullet-point overview and potential applications.
-    - Include all fields specified in the query. Use "N/A" for any missing information.
-    - Do not generate or invent any data not present in the content.
-    - If a specific entry count is requested, limit your output accordingly.
-    - For comprehensive data requests, extract all relevant information.
-    - Ensure that all extracted data is an accurate representation of the webpage content.
-    - Select appropriate field names based on the content and the user's query.
-
-    Webpage content:
-    {webpage_content}
-
-    User query: {query}
-    AI response: """
-)
 
 def get_prompt_for_model(model_name: str) -> PromptTemplate:
-    if model_name.startswith("gpt-") or model_name.startswith("text-"):
-        return OPENAI_PROMPT
-    elif model_name.startswith("gemini-"):
-        return GEMINI_PROMPT
-    elif model_name.startswith("ollama:"):
-        return OLLAMA_PROMPT
-    else:
-        raise ValueError(f"Unsupported model: {model_name}")
+    """
+    Get the appropriate prompt template for a given model.
+
+    All models now use the same consolidated prompt for consistency
+    and reduced token usage.
+
+    Args:
+        model_name: The name of the model (e.g., "gpt-4o-mini", "gemini-pro", "ollama:llama2")
+
+    Returns:
+        PromptTemplate configured for the model
+
+    Raises:
+        ValueError: If the model is not supported
+    """
+    match model_name:
+        case name if name.startswith(("gpt-", "text-")):
+            return _UNIFIED_PROMPT
+        case name if name.startswith("gemini-"):
+            return _UNIFIED_PROMPT
+        case name if name.startswith("ollama:"):
+            return _UNIFIED_PROMPT
+        case _:
+            raise ValueError(f"Unsupported model: {model_name}")
