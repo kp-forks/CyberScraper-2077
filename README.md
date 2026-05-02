@@ -148,6 +148,7 @@ Note: Ensure that your firewall allows connections to port 11434 for Ollama.
 
 1. Fire up the Streamlit app:
    ```bash
+   source venv/bin/activate # If not yet done
    streamlit run main.py
    ```
 
